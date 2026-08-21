@@ -25,7 +25,7 @@ Copy the URL in the **Paste this** column into the Google Form. Files are alread
 ## Video (required — Drive only)
 
 File on disk / GitHub: [GUSIP-demo.mp4](https://github.com/parthiv11/gusip/raw/main/docs/submission/GUSIP-demo.mp4)  
-1920×1080 · 2:44 · captions on screen (no voiceover) · official Sentinel wall is in the first minute.
+1920×1080 · ~2:38 · captions on screen (no voiceover) · official Sentinel wall is in the first minute.
 
 What it shows:
 

@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Record the 1080p jury walkthrough: Gov feeds, stolen corridor, Investigate, break-glass."""
+"""High-quality 1080p demo via Chrome CDP screencast (JPEG frames → H.264)."""
 
 from __future__ import annotations
 
+import base64
+import queue
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -13,6 +16,7 @@ from playwright.sync_api import Page, TimeoutError as PWTimeout, sync_playwright
 ROOT = Path("/home/codespace/gusip")
 OUT = ROOT / "docs/submission"
 RAW = OUT / "video-raw"
+FRAMES = RAW / "frames"
 BASE = "http://localhost:8080"
 MP4 = OUT / "GUSIP-demo.mp4"
 
@@ -69,19 +73,20 @@ def login(page: Page, user: str, password: str) -> None:
     page.wait_for_selector("input")
     page.locator("input").first.fill(user)
     page.locator("input[type=password]").fill(password)
-    hold(page, 1.4)
+    hold(page, 1.2)
     page.get_by_role("button", name="Sign in").click()
     page.wait_for_url(lambda url: "/login" not in url, timeout=25000)
-    page.wait_for_timeout(800)
+    page.wait_for_timeout(900)
 
 
 def click_nav(page: Page, label: str) -> None:
-    link = page.locator("nav a", has_text=label).first
+    link = page.locator("header nav a", has_text=label).first
     if link.count() and link.is_visible():
         link.click()
     else:
-        page.goto(f"{BASE}{ {'Control Room': '/', 'Investigate': '/search', 'Cameras': '/cameras', 'GIS': '/map'}.get(label, '/') }")
-    page.wait_for_timeout(600)
+        dest = {"Control Room": "/", "Investigate": "/search", "Cameras": "/cameras", "GIS": "/map"}[label]
+        page.goto(f"{BASE}{dest}")
+    page.wait_for_timeout(700)
 
 
 def run_corridor() -> subprocess.Popen:
@@ -95,20 +100,20 @@ def run_corridor() -> subprocess.Popen:
 
 def walkthrough(page: Page) -> None:
     page.set_content(TITLE)
-    hold(page, 5)
+    hold(page, 4)
 
     login(page, "operator", "GUSIP@ops2026")
     caption(page, "Operator wall. Video stays on departmental NVRs — this is the hit picture.")
-    hold(page, 3)
+    hold(page, 2.5)
 
     page.get_by_role("button", name="Gov feeds").click()
     caption(page, "Gov feeds — official cameras from live.sentinelgujarat.in")
-    hold(page, 2)
+    hold(page, 1.5)
     page.get_by_role("button", name="Sync Sentinel").click()
     try:
         page.wait_for_selector("text=government feeds onboarded", timeout=45000)
     except PWTimeout:
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(3000)
 
     caption(page, "Chimanbhai Bridge — jury-provided Sentinel camera, live through the GUSIP proxy.")
     for label in ("SEN-1", "Chimanbhai", "Bridge"):
@@ -119,13 +124,12 @@ def walkthrough(page: Page) -> None:
                 break
         except PWTimeout:
             continue
-    hold(page, 14)
+    hold(page, 16)
 
-    # Second official camera so it is obviously a wall, not one clip
     try:
         page.get_by_text("SEN-15", exact=False).first.click(timeout=3000)
-        caption(page, "Same wall, next official camera. Progressive stream + JPEG fallback so the pane is never black.")
-        hold(page, 8)
+        caption(page, "Same wall, next official camera. Live stream from the Sentinel evaluation wall.")
+        hold(page, 10)
     except PWTimeout:
         hold(page, 3)
 
@@ -191,36 +195,63 @@ def walkthrough(page: Page) -> None:
         pass
 
     page.set_content(END)
-    hold(page, 6)
+    hold(page, 5)
 
 
-def encode(webm: Path) -> None:
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(webm),
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-crf",
-        "22",
-        "-preset",
-        "medium",
-        "-movflags",
-        "+faststart",
-        "-an",
-        str(MP4),
-    ]
-    subprocess.check_call(cmd)
+def encode(n_frames: int, elapsed: float) -> None:
+    fps = max(8.0, min(30.0, n_frames / max(elapsed, 1.0)))
+    print(f"Assembling {n_frames} frames at {fps:.2f} fps ({elapsed:.1f}s walkthrough)")
+    subprocess.check_call(
+        [
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            f"{fps:.3f}",
+            "-i",
+            str(FRAMES / "%06d.jpg"),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-vf",
+            "scale=1920:1080:flags=lanczos,fps=30",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(MP4),
+        ]
+    )
     print(f"Wrote {MP4} ({MP4.stat().st_size / 1e6:.1f} MB)")
 
 
 def main() -> int:
     RAW.mkdir(parents=True, exist_ok=True)
-    for old in RAW.glob("*"):
-        old.unlink()
+    if FRAMES.exists():
+        for old in FRAMES.glob("*"):
+            old.unlink()
+    else:
+        FRAMES.mkdir()
+
+    pending: queue.Queue = queue.Queue()
+    stop = threading.Event()
+    written = {"n": 0}
+
+    def writer() -> None:
+        while not stop.is_set() or not pending.empty():
+            try:
+                blob = pending.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            written["n"] += 1
+            (FRAMES / f"{written['n']:06d}.jpg").write_bytes(blob)
+
+    thread = threading.Thread(target=writer, daemon=True)
+    thread.start()
+    t0 = time.time()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -232,33 +263,49 @@ def main() -> int:
         )
         context = browser.new_context(
             viewport={"width": 1920, "height": 1080},
-            record_video_dir=str(RAW),
-            record_video_size={"width": 1920, "height": 1080},
             ignore_https_errors=True,
         )
         page = context.new_page()
         page.set_default_timeout(20000)
+        client = context.new_cdp_session(page)
+
+        def on_frame(params: dict) -> None:
+            pending.put(base64.b64decode(params["data"]))
+            try:
+                client.send("Page.screencastFrameAck", {"sessionId": params["sessionId"]})
+            except Exception:
+                pass
+
+        client.on("Page.screencastFrame", on_frame)
+        client.send(
+            "Page.startScreencast",
+            {
+                "format": "jpeg",
+                "quality": 92,
+                "everyNthFrame": 1,
+                "maxWidth": 1920,
+                "maxHeight": 1080,
+            },
+        )
         try:
             walkthrough(page)
-        except Exception as exc:
-            caption(page, f"Recording note: {exc}")
-            hold(page, 3)
-            print("Walkthrough error:", exc, file=sys.stderr)
-            raise
         finally:
-            video = page.video
+            try:
+                client.send("Page.stopScreencast")
+            except Exception:
+                pass
+            time.sleep(0.4)
             context.close()
             browser.close()
-            webm = Path(video.path()) if video else None
 
-    if not webm or not webm.exists():
-        found = list(RAW.glob("*.webm"))
-        if not found:
-            print("No webm recorded", file=sys.stderr)
-            return 1
-        webm = found[0]
-
-    encode(webm)
+    elapsed = time.time() - t0
+    stop.set()
+    thread.join(timeout=60)
+    n = written["n"]
+    if n < 80:
+        print(f"Too few frames: {n}", file=sys.stderr)
+        return 1
+    encode(n, elapsed)
     return 0
 
 
