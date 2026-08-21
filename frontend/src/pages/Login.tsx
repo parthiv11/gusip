@@ -20,13 +20,13 @@ export default function Login() {
   }
 
   return (
-    <div className="h-full grid place-items-center bg-[radial-gradient(ellipse_at_top,_#1a2438,_#05070d)]">
-      <form onSubmit={onSubmit} className="w-[420px] border border-white/10 bg-ink-900/80 p-8 rounded-lg shadow-2xl">
+    <div className="h-full grid place-items-center bg-[radial-gradient(ellipse_at_top,_#1a2438,_#05070d)] p-4">
+      <form onSubmit={onSubmit} className="w-full max-w-[420px] border border-white/10 bg-ink-900/80 p-6 sm:p-8 rounded-lg shadow-2xl">
         <div className="flex items-center gap-3 mb-6">
           <div className="h-12 w-12 bg-brass-500 text-ink-950 font-bold grid place-items-center rounded">GP</div>
           <div>
             <h1 className="text-xl font-semibold text-brass-400">GUSIP</h1>
-            <p className="text-xs text-slate-400 uppercase tracking-[0.2em]">Gujarat Police Innovation Challenge 2026</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-[0.2em]">Gujarat Police Innovation Challenge 2026</p>
           </div>
         </div>
         <p className="text-sm text-slate-300 mb-6">

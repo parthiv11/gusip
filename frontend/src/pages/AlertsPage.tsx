@@ -15,9 +15,9 @@ export default function AlertsPage() {
   }, [status]);
   return (
     <div className="h-full p-4 overflow-auto">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
         <h1 className="text-lg font-semibold">Alerts</h1>
-        <select className="ml-auto bg-ink-900 border border-white/10 rounded px-2 py-1 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select className="sm:ml-auto bg-ink-900 border border-white/10 rounded px-2 py-1 text-sm w-full sm:w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All</option>
           <option value="new">New</option>
           <option value="acknowledged">Acknowledged</option>
@@ -25,11 +25,11 @@ export default function AlertsPage() {
       </div>
       <div className="grid gap-3">
         {alerts.map((a) => (
-          <div key={a.id} className="border border-white/10 rounded p-3 grid grid-cols-12 gap-3 bg-ink-900">
-            <div className="col-span-2">
-              {a.snapshot_url && <img src={snapSrc(a.snapshot_url)} className="w-full h-24 object-cover rounded" alt="" />}
+          <div key={a.id} className="border border-white/10 rounded p-3 grid grid-cols-1 sm:grid-cols-12 gap-3 bg-ink-900">
+            <div className="sm:col-span-2">
+              {a.snapshot_url && <img src={snapSrc(a.snapshot_url)} className="w-full h-40 sm:h-24 object-cover rounded" alt="" />}
             </div>
-            <div className="col-span-10 text-sm">
+            <div className="sm:col-span-10 text-sm">
               <div className="flex justify-between">
                 <span className="text-brass-400 font-medium">{a.watchlist?.category?.replaceAll("_", " ")}</span>
                 <span className="font-mono text-xs text-slate-500">{a.timestamp}</span>

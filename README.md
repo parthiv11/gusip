@@ -122,6 +122,14 @@ Set `INFERENCE_MODE=yolo` on GPU nodes and install `ultralytics` to switch the s
 | SRS | [docs/SRS.md](docs/SRS.md) |
 | **Submission pack** (presentation, HLD, diagrams) | [docs/submission/README.md](docs/submission/README.md) |
 
+Hackathon form URLs (public repo):
+
+- Presentation PDF: https://github.com/parthiv11/gusip/raw/main/docs/submission/GUSIP-presentation.pdf
+- Architecture SVG: https://github.com/parthiv11/gusip/raw/main/docs/submission/architecture.svg
+- Workflow SVG: https://github.com/parthiv11/gusip/raw/main/docs/submission/workflow.svg
+- Screenshots: https://github.com/parthiv11/gusip/tree/main/docs/submission/screenshots
+
+
 ## Acceptance mapped to this PoC
 
 | Criterion | How to show it |

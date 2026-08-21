@@ -32,11 +32,11 @@ export default function MapPage() {
   }, [status, dept]);
 
   return (
-    <div className="h-full grid grid-cols-12">
-      <div className="col-span-9">
+    <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden">
+      <div className="lg:col-span-9 min-h-[50vh] lg:min-h-0">
         <GujaratMap cameras={cameras} showCoverage alerts={alerts} />
       </div>
-      <div className="col-span-3 border-l border-white/10 p-3 overflow-auto bg-ink-900">
+      <div className="lg:col-span-3 border-t lg:border-t-0 lg:border-l border-white/10 p-3 overflow-auto bg-ink-900">
         <h2 className="text-sm font-semibold text-brass-400 mb-3">Filters</h2>
         <select className="w-full bg-ink-950 border border-white/10 rounded px-2 py-1 text-xs mb-2" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All status</option>

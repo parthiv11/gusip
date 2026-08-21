@@ -7,7 +7,7 @@ export default function AdminPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api("/api/v1/admin/stats").then(setStats);
+    api<Record<string, unknown>>("/api/v1/admin/stats").then(setStats);
     api<Record<string, unknown>[]>("/api/v1/admin/audit")
       .then(setAudit)
       .catch(() => setError("Audit log requires coordinator or admin role."));
@@ -16,7 +16,7 @@ export default function AdminPage() {
   return (
     <div className="h-full p-4 overflow-auto">
       <h1 className="text-lg font-semibold mb-4">Administration</h1>
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {["cameras", "online", "events", "open_alerts"].map((k) => (
           <div key={k} className="border border-white/10 rounded p-3 bg-ink-900">
             <div className="text-[10px] uppercase tracking-widest text-slate-500">{k.replaceAll("_", " ")}</div>
@@ -26,7 +26,8 @@ export default function AdminPage() {
       </div>
       {error && <div className="text-amber-400 text-sm mb-3">{error}</div>}
       <h2 className="text-sm font-semibold mb-2">Audit trail</h2>
-      <table className="w-full text-xs">
+      <div className="overflow-x-auto">
+      <table className="w-full text-xs min-w-[640px]">
         <thead className="text-slate-500 uppercase">
           <tr>
             <th className="text-left py-2">Time</th>
@@ -48,6 +49,7 @@ export default function AdminPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

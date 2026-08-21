@@ -11,6 +11,8 @@ import {
   Shield,
   Unlock,
   Users,
+  Menu,
+  X,
 } from "lucide-react";
 import { api, can, getSession, refreshSession, setSession } from "../api/client";
 import type { BreakGlass, Session } from "../types";
@@ -32,6 +34,7 @@ export default function Shell() {
   const [reason, setReason] = useState("FIR 112/2026 — suspect vehicle left home district");
   const [minutes, setMinutes] = useState(30);
   const [open, setOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -77,69 +80,100 @@ export default function Shell() {
   return (
     <div className="h-full flex flex-col relative">
       {glass?.active && (
-        <div className="shrink-0 bg-orange-500/15 text-orange-200 text-[11px] px-4 py-1.5 flex items-center gap-3 border-b border-orange-500/30">
-          <Unlock size={12} />
-          <span className="font-semibold uppercase tracking-wide">Break-glass statewide</span>
+        <div className="shrink-0 bg-orange-500/15 text-orange-200 text-[11px] px-3 sm:px-4 py-1.5 flex items-center gap-2 sm:gap-3 border-b border-orange-500/30">
+          <Unlock size={12} className="shrink-0" />
+          <span className="font-semibold uppercase tracking-wide hidden sm:inline">Break-glass statewide</span>
           <span className="truncate flex-1">{glass.reason}</span>
-          <span className="font-mono">until {new Date(glass.expires_at).toLocaleTimeString("en-IN")}</span>
-          <button className="underline" onClick={revokeGlass}>
+          <span className="font-mono hidden md:inline">until {new Date(glass.expires_at).toLocaleTimeString("en-IN")}</span>
+          <button className="underline shrink-0" onClick={revokeGlass}>
             End now
           </button>
         </div>
       )}
-      <header className="h-14 shrink-0 border-b border-white/10 bg-ink-900 flex items-center px-4 gap-4">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-sm bg-brass-500 text-ink-950 font-bold grid place-items-center">
-            GP
-          </div>
-          <div>
-            <div className="text-sm font-semibold tracking-wide text-brass-400">GUSIP</div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400">
-              Gujarat Police · Unified Surveillance
+      <header className="shrink-0 border-b border-white/10 bg-ink-900">
+        <div className="flex items-center px-3 sm:px-4 gap-2 sm:gap-4 min-h-14">
+          <button
+            className="lg:hidden text-slate-300 p-1.5 -ml-1"
+            aria-label="Menu"
+            onClick={() => setNavOpen((v) => !v)}
+          >
+            {navOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="h-8 w-8 shrink-0 rounded-sm bg-brass-500 text-ink-950 font-bold grid place-items-center">
+              GP
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold tracking-wide text-brass-400">GUSIP</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 hidden sm:block truncate">
+                Gujarat Police · Unified Surveillance
+              </div>
             </div>
           </div>
-        </div>
-        <nav className="flex-1 flex items-center gap-1 ml-6 overflow-x-auto">
-          {NAV.filter((n) => can(n.cap)).map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.to === "/"}
-              className={({ isActive }) =>
-                `flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium ${
-                  isActive ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white"
-                }`
-              }
+          <nav className="hidden lg:flex flex-1 items-center gap-1 ml-6 overflow-x-auto">
+            {NAV.filter((n) => can(n.cap)).map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.to === "/"}
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
+                    isActive ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white"
+                  }`
+                }
+              >
+                <n.icon size={14} />
+                {n.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
+            {showBreakGlass && (
+              <button
+                className="text-[11px] px-2 py-1 border border-orange-500/40 text-orange-300 rounded"
+                onClick={() => setOpen(true)}
+              >
+                Break-glass
+              </button>
+            )}
+            <div className="text-right hidden md:block mr-1">
+              <div className="text-xs font-medium">{session?.full_name}</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                {session?.role?.replaceAll("_", " ")}
+                {session?.scope === "department" ? " · home dept" : " · statewide"}
+              </div>
+            </div>
+            <button
+              className="text-slate-400 hover:text-white p-1"
+              onClick={() => {
+                setSession(null);
+                nav("/login");
+              }}
             >
-              <n.icon size={14} />
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
-        {showBreakGlass && (
-          <button
-            className="text-[11px] px-2 py-1 border border-orange-500/40 text-orange-300 rounded"
-            onClick={() => setOpen(true)}
-          >
-            Break-glass
-          </button>
-        )}
-        <div className="text-right mr-2">
-          <div className="text-xs font-medium">{session?.full_name}</div>
-          <div className="text-[10px] uppercase tracking-wider text-slate-500">
-            {session?.role?.replaceAll("_", " ")}
-            {session?.scope === "department" ? " · home dept" : " · statewide"}
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
-        <button
-          className="text-slate-400 hover:text-white"
-          onClick={() => {
-            setSession(null);
-            nav("/login");
-          }}
-        >
-          <LogOut size={16} />
-        </button>
+        {navOpen && (
+          <nav className="lg:hidden grid grid-cols-2 sm:grid-cols-3 gap-1 px-3 pb-3">
+            {NAV.filter((n) => can(n.cap)).map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.to === "/"}
+                onClick={() => setNavOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-1.5 px-3 py-2 rounded text-xs font-medium ${
+                    isActive ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white bg-white/5"
+                  }`
+                }
+              >
+                <n.icon size={14} />
+                {n.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
       </header>
       {open && (
         <div className="fixed inset-0 z-20 bg-black/60 grid place-items-center p-4">

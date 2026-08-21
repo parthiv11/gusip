@@ -45,13 +45,13 @@ export default function CasesPage() {
   return (
     <div className="h-full p-4 overflow-auto">
       <h1 className="text-lg font-semibold mb-4">Case folders</h1>
-      <form onSubmit={create} className="flex gap-2 mb-6">
+      <form onSubmit={create} className="flex flex-col sm:flex-row gap-2 mb-6">
         <input className="flex-1 bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <button className="bg-brass-500 text-ink-950 px-4 rounded text-sm font-semibold">Create</button>
+        <button className="bg-brass-500 text-ink-950 px-4 py-2 rounded text-sm font-semibold">Create</button>
       </form>
       <ul className="space-y-2">
         {rows.map((r) => (
-          <li key={r.id} className="border border-white/10 rounded p-3 flex justify-between">
+          <li key={r.id} className="border border-white/10 rounded p-3 flex flex-col sm:flex-row sm:justify-between gap-2">
             <div>
               <div className="font-medium">{r.title}</div>
               <div className="text-xs text-slate-400">

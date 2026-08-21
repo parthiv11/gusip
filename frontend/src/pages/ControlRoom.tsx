@@ -253,8 +253,8 @@ export default function ControlRoom() {
   }
 
   return (
-    <div className="h-full grid grid-cols-12 gap-2 p-2">
-      <section className="col-span-8 flex flex-col min-h-0 gap-2">
+    <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-2 p-2 overflow-y-auto lg:overflow-hidden">
+      <section className="lg:col-span-8 flex flex-col min-h-0 gap-2">
         {toast && (
           <div className="px-3 py-2 rounded border border-red-500/50 bg-red-500/15 text-red-100 text-xs font-medium">
             {toast}
@@ -297,12 +297,12 @@ export default function ControlRoom() {
           </button>
         </div>
         {selected && <FocusPlayer camera={selected} live={live[selected.id]} alert={focusAlertRow} />}
-        <div className="grid grid-cols-4 gap-2 overflow-auto min-h-0">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 overflow-auto min-h-0">
           {slice.map((c) => (
             <CameraTile key={c.id} camera={c} live={live[c.id]} selected={selected?.id === c.id} onSelect={() => setSelected(c)} />
           ))}
         </div>
-        <div className="h-40 shrink-0 border border-white/10 rounded overflow-hidden">
+        <div className="h-48 sm:h-40 shrink-0 border border-white/10 rounded overflow-hidden">
           <GujaratMap
             cameras={filtered}
             selectedId={selected?.id}
@@ -312,7 +312,7 @@ export default function ControlRoom() {
           />
         </div>
       </section>
-      <aside className="col-span-4 min-h-0 flex flex-col border border-white/10 rounded bg-ink-900">
+      <aside className="lg:col-span-4 min-h-[40vh] lg:min-h-0 flex flex-col border border-white/10 rounded bg-ink-900">
         <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-brass-400">Alert inbox</h2>
           <a className="text-[10px] text-orange-300" href="/search">

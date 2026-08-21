@@ -45,8 +45,8 @@ export default function WatchlistPage() {
     <div className="h-full p-4 overflow-auto">
       <h1 className="text-lg font-semibold mb-4">Watchlist</h1>
       {can("watchlist_write") ? (
-      <form onSubmit={add} className="flex gap-2 mb-6 text-sm">
-        <select className="bg-ink-900 border border-white/10 rounded px-2" value={category} onChange={(e) => setCategory(e.target.value)}>
+      <form onSubmit={add} className="flex flex-col sm:flex-row gap-2 mb-6 text-sm">
+        <select className="bg-ink-900 border border-white/10 rounded px-2 py-2" value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="stolen_vehicle">Stolen vehicle</option>
           <option value="blacklisted_vehicle">Blacklisted vehicle</option>
           <option value="wanted_person">Wanted person</option>
@@ -59,7 +59,8 @@ export default function WatchlistPage() {
       ) : (
         <p className="text-xs text-slate-500 mb-6">View only — operators cannot mutate the watchlist.</p>
       )}
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[560px]">
         <thead className="text-xs uppercase text-slate-500">
           <tr>
             <th className="text-left py-2">Category</th>
@@ -81,6 +82,7 @@ export default function WatchlistPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

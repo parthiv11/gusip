@@ -57,12 +57,12 @@ export default function SearchPage() {
   }));
 
   return (
-    <div className="h-full grid grid-cols-12">
-      <div className="col-span-5 p-4 overflow-auto border-r border-white/10">
+    <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden">
+      <div className="lg:col-span-5 p-4 overflow-auto border-b lg:border-b-0 lg:border-r border-white/10">
         <h1 className="text-lg font-semibold mb-3">Investigation search</h1>
         <form onSubmit={onSearch} className="flex flex-col gap-2 mb-4">
           <input className="bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm font-mono" value={plate} onChange={(e) => setPlate(e.target.value)} />
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <select
               className="flex-1 bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm"
               value={purpose}
@@ -121,7 +121,7 @@ export default function SearchPage() {
           ))}
         </ol>
       </div>
-      <div className="col-span-7">
+      <div className="lg:col-span-7 min-h-[40vh] lg:min-h-0">
         <GujaratMap cameras={cameras} track={track} />
       </div>
     </div>

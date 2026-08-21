@@ -16,16 +16,17 @@ export default function CamerasPage() {
   );
   return (
     <div className="h-full p-4 overflow-auto">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
         <h1 className="text-lg font-semibold">Camera registry</h1>
         <input
           placeholder="Filter code, name, city"
-          className="ml-auto bg-ink-900 border border-white/10 rounded px-3 py-1.5 text-sm w-72"
+          className="sm:ml-auto bg-ink-900 border border-white/10 rounded px-3 py-1.5 text-sm w-full sm:w-72"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[720px]">
         <thead className="text-xs uppercase text-slate-500">
           <tr>
             <th className="text-left py-2">Code</th>
@@ -53,6 +54,7 @@ export default function CamerasPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

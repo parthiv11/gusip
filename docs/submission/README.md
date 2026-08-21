@@ -1,45 +1,48 @@
-# Hackathon form — files to upload
+# Hackathon form — paste these links
 
-The Google Form needs **Google Drive (or similar) links**, not git paths. Upload these files from `docs/submission/`, set sharing to **Anyone with the link can view**, then paste the URLs.
+Public GitHub repo: **https://github.com/parthiv11/gusip**
 
-Print HTML to PDF: open the file in Chrome → Print → Destination **Save as PDF** → Layout **Landscape** (presentation) or **Portrait** (HLD).
+Copy the URL in the **Paste this** column into the Google Form. Files are already on `main`.
 
-| Form field | File | How |
-|---|---|---|
-| **Solution presentation** (PDF/PPT/PPTX) | `presentation.html` → save as `GUSIP-presentation.pdf` | Chrome print to PDF, landscape |
-| **High-level design / architecture** (PDF/PNG/JPG/SVG) | `architecture.svg` **or** `hld.html` → `GUSIP-HLD.pdf` | Prefer PDF of HLD + SVG as backup |
-| **Workflow / integration diagram** (PDF/PNG/JPG/SVG) | `workflow.svg` | Upload SVG directly, or File → Open in Chrome → print PDF |
-| **Screenshots folder** | `screenshots/` | See shot list below; upload the folder to Drive |
-| **Solution video** | Record yourself | Must include **official Sentinel / provided data**, not only own/demo |
-| **Any other document** | Optional | `docs/security.md`, `docs/scalability.md`, `docs/cost-benefit.md` as PDFs, or the GitHub repo URL |
+| Form field | Paste this |
+|---|---|
+| **Solution presentation** (PDF / PPT / PPTX) | https://github.com/parthiv11/gusip/raw/main/docs/submission/GUSIP-presentation.pdf |
+| **High-level design / architecture** (PDF / PNG / JPG / JPEG / SVG) | https://github.com/parthiv11/gusip/raw/main/docs/submission/architecture.svg |
+| **Workflow / integration diagram** (PDF / PNG / JPG / JPEG / SVG) | https://github.com/parthiv11/gusip/raw/main/docs/submission/workflow.svg |
+| **Screenshots folder** | https://github.com/parthiv11/gusip/tree/main/docs/submission/screenshots |
+| **Solution video** (Google Drive) | *You still record this* — must include official Sentinel / Gov feeds. Then paste the Drive link. |
+| **Any other document** | https://github.com/parthiv11/gusip |
 
-## Video (required)
+## Backup links (same files)
+
+| Field | Alternate |
+|---|---|
+| Presentation (HTML, print to PDF if a judge prefers slides) | https://github.com/parthiv11/gusip/blob/main/docs/submission/presentation.html |
+| HLD PDF | https://github.com/parthiv11/gusip/raw/main/docs/submission/GUSIP-HLD.pdf |
+| HLD HTML | https://github.com/parthiv11/gusip/blob/main/docs/submission/hld.html |
+| Security / scale / cost | https://github.com/parthiv11/gusip/blob/main/docs/security.md · https://github.com/parthiv11/gusip/blob/main/docs/scalability.md · https://github.com/parthiv11/gusip/blob/main/docs/cost-benefit.md |
+
+## Video (required — Drive only)
 
 Form text: you may use own data **but you must also show their provided feeds**.
 
-Record 3–5 minutes (OBS or phone of the screen), 1920×1080:
+Record 3–5 minutes, 1920×1080 (OBS or phone of the screen):
 
 1. Login `operator` / `GUSIP@ops2026` — hybrid Model 1+2+3, VMS not replaced.
-2. **Gov feeds** → Sync Sentinel → click an official camera (live.sentinelgujarat.in).
+2. **Gov feeds** → Sync Sentinel → play an official camera (`live.sentinelgujarat.in`).
 3. Own/demo wall + a watchlist hit auto-focus (`GJ 05 BL 9999` or stolen corridor).
 4. Investigate `GJ 01 ST 0001` with purpose **evaluation** → GIS hops.
 5. Mention coordinator break-glass and that operators cannot export.
 
-Then upload to Drive and paste the link. Keep the file unlisted/anyone-with-link.
+Upload to Google Drive → **Anyone with the link can view** → paste that URL in the video field.
 
-## Screenshots to capture into `screenshots/`
-
-With `docker compose up` and http://localhost:8080:
+## Screenshots already in the folder
 
 1. `01-login.png`
-2. `02-gov-feeds.png` — official Sentinel wall + large player
-3. `03-own-demo-focus.png` — auto-focus pane on a watchlist hit
+2. `02-gov-feeds.png` — official Sentinel wall
+3. `03-own-demo-focus.png` — enlarged official camera
 4. `04-gis.png`
-5. `05-investigate.png` — plate search + map
+5. `05-investigate.png`
 6. `06-watchlist.png`
 7. `07-alerts.png`
-8. `08-rbac-coordinator.png` — login as coordinator, home-dept wall + Break-glass (optional)
-
-## After you have Drive URLs
-
-Paste them only in the form. Do not commit secrets. You can keep a private note of the URLs locally; they are not stored in this repo.
+8. `08-rbac-coordinator.png`
