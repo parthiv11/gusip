@@ -1,0 +1,161 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: gusip
+      POSTGRES_PASSWORD: gusip
+      POSTGRES_DB: gusip
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gusip -d gusip && psql -U gusip -d gusip -c 'SELECT PostGIS_version()' >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [gusip]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [gusip]
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: gusip
+      MINIO_ROOT_PASSWORD: gusipsecret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [gusip]
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.9
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"
+    profiles: ["full"]
+    networks: [gusip]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gusip:gusip@postgres:5432/gusip
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: gusip
+      MINIO_SECRET_KEY: gusipsecret
+      MINIO_BUCKET: gusip-evidence
+      MINIO_SECURE: "false"
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost
+      SIMULATION_ENABLED: "true"
+      INFERENCE_MODE: simulate
+      SENTINEL_BASE_URL: https://live.sentinelgujarat.in
+      SENTINEL_ENABLED: "true"
+      SENTINEL_ANPR_ENABLED: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - evidence_data:/app/data
+    restart: on-failure
+    command: >
+      sh -c "python wait_for_db.py && python -m app.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+    networks: [gusip]
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://gusip:gusip@postgres:5432/gusip
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: gusip
+      MINIO_SECRET_KEY: gusipsecret
+      MINIO_BUCKET: gusip-evidence
+      MINIO_SECURE: "false"
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
+      SIMULATION_ENABLED: "true"
+      INFERENCE_MODE: yolo
+      USE_KAFKA: "false"
+      SENTINEL_BASE_URL: https://live.sentinelgujarat.in
+      SENTINEL_ENABLED: "true"
+      SENTINEL_ANPR_ENABLED: "true"
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - evidence_data:/app/data
+    restart: on-failure
+    command: python -m app.workers.main
+    networks: [gusip]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_WS_URL: /ws
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks: [gusip]
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  evidence_data:
+
+networks:
+  gusip:
+    driver: bridge

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900">
+  <rect width="1400" height="900" fill="#070b12"/>
+  <text x="40" y="40" fill="#d4af37" font-family="Georgia, serif" font-size="22" font-weight="700">GUSIP  Workflow &amp; integration</text>
+  <text x="40" y="64" fill="#94a3b8" font-family="system-ui" font-size="13">Same detection event contract for Sentinel gov feeds, RTSP/ONVIF/vendor adapters, and the PoC simulator.</text>
+  <text x="1360" y="40" text-anchor="end" fill="#64748b" font-family="system-ui" font-size="11">Watchlist hit &lt; 8 s (PoC path)</text>
+
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <polygon points="0 0, 8 4, 0 8" fill="#d4af37"/>
+    </marker>
+  </defs>
+
+  <!-- Flow 1 -->
+  <text x="40" y="100" fill="#fde68a" font-family="system-ui" font-size="13" letter-spacing="1">FLOW A � LIVE WATCHLIST HIT</text>
+
+  <rect x="40" y="118" width="160" height="88" rx="8" fill="#1e293b" stroke="#fb923c"/>
+  <text x="120" y="152" text-anchor="middle" fill="#fdba74" font-family="system-ui" font-size="13">1. Source</text>
+  <text x="120" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">Sentinel / VMS / sim</text>
+  <text x="120" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">catalog � stream</text>
+
+  <line x1="200" y1="162" x2="228" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="230" y="118" width="160" height="88" rx="8" fill="#1e293b" stroke="#38bdf8"/>
+  <text x="310" y="152" text-anchor="middle" fill="#7dd3fc" font-family="system-ui" font-size="13">2. Adapter</text>
+  <text x="310" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">proxy / ffmpeg frame</text>
+  <text x="310" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">Range stream � sample</text>
+
+  <line x1="390" y1="162" x2="418" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="420" y="118" width="160" height="88" rx="8" fill="#1e293b" stroke="#4ade80"/>
+  <text x="500" y="152" text-anchor="middle" fill="#bbf7d0" font-family="system-ui" font-size="13">3. Detect</text>
+  <text x="500" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">OCR / YOLO hook / sim</text>
+  <text x="500" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">plate � bbox � track id</text>
+
+  <line x1="580" y1="162" x2="608" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="610" y="118" width="160" height="88" rx="8" fill="#1e293b" stroke="#d4af37"/>
+  <text x="690" y="152" text-anchor="middle" fill="#fde68a" font-family="system-ui" font-size="13">4. Ingest</text>
+  <text x="690" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">pipeline + PostGIS</text>
+  <text x="690" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">event + track_point</text>
+
+  <line x1="770" y1="162" x2="798" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="800" y="118" width="160" height="88" rx="8" fill="#1e293b" stroke="#f87171"/>
+  <text x="880" y="152" text-anchor="middle" fill="#fecaca" font-family="system-ui" font-size="13">5. Match</text>
+  <text x="880" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">watchlist � coalesce</text>
+  <text x="880" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">1 open alert / camera</text>
+
+  <line x1="960" y1="162" x2="988" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="990" y="118" width="180" height="88" rx="8" fill="#1e293b" stroke="#c084fc"/>
+  <text x="1080" y="152" text-anchor="middle" fill="#e9d5ff" font-family="system-ui" font-size="13">6. Bus + WS</text>
+  <text x="1080" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">Redis publish</text>
+  <text x="1080" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">snapshot encrypted</text>
+
+  <line x1="1170" y1="162" x2="1198" y2="162" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+
+  <rect x="1200" y="118" width="160" height="88" rx="8" fill="#292524" stroke="#d4af37"/>
+  <text x="1280" y="152" text-anchor="middle" fill="#fde68a" font-family="system-ui" font-size="13">7. Control room</text>
+  <text x="1280" y="174" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="11">auto-focus � toast</text>
+  <text x="1280" y="192" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="10">ack � audit</text>
+
+  <!-- Flow 2 -->
+  <text x="40" y="250" fill="#fde68a" font-family="system-ui" font-size="13" letter-spacing="1">FLOW B � INVESTIGATION RECONSTRUCTION</text>
+  <rect x="40" y="268" width="250" height="80" rx="8" fill="#1e293b" stroke="#d4af37"/>
+  <text x="165" y="300" text-anchor="middle" fill="#fde68a" font-family="system-ui" font-size="13">Officer declares purpose</text>
+  <text x="165" y="322" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="11">stolen_vehicle � evaluation � &</text>
+  <line x1="290" y1="308" x2="318" y2="308" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="320" y="268" width="250" height="80" rx="8" fill="#1e293b" stroke="#38bdf8"/>
+  <text x="445" y="300" text-anchor="middle" fill="#7dd3fc" font-family="system-ui" font-size="13">Search events / plate route</text>
+  <text x="445" y="322" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="11">dept-scoped unless break-glass</text>
+  <line x1="570" y1="308" x2="598" y2="308" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="600" y="268" width="250" height="80" rx="8" fill="#1e293b" stroke="#4ade80"/>
+  <text x="725" y="300" text-anchor="middle" fill="#bbf7d0" font-family="system-ui" font-size="13">GIS polyline of hops</text>
+  <text x="725" y="322" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="11">Leaflet � PostGIS coordinates</text>
+  <line x1="850" y1="308" x2="878" y2="308" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="880" y="268" width="250" height="80" rx="8" fill="#1e293b" stroke="#c084fc"/>
+  <text x="1005" y="300" text-anchor="middle" fill="#e9d5ff" font-family="system-ui" font-size="13">Case folder + evidence</text>
+  <text x="1005" y="322" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="11">export JSON gated by role</text>
+  <line x1="1130" y1="308" x2="1158" y2="308" stroke="#d4af37" stroke-width="2" marker-end="url(#a)"/>
+  <rect x="1160" y="268" width="200" height="80" rx="8" fill="#1e293b" stroke="#64748b"/>
+  <text x="1260" y="300" text-anchor="middle" fill="#cbd5e1" font-family="system-ui" font-size="13">Audit row</text>
+  <text x="1260" y="322" text-anchor="middle" fill="#94a3b8" font-family="system-ui" font-size="11">user � purpose � IP � time</text>
+
+  <!-- Integrations -->
+  <text x="40" y="390" fill="#fde68a" font-family="system-ui" font-size="13" letter-spacing="1">INTEGRATIONS (BOUND TODAY VS STUBBED)</text>
+  <rect x="40" y="408" width="430" height="210" rx="8" fill="#0f172a" stroke="#4ade80"/>
+  <text x="60" y="438" fill="#86efac" font-family="system-ui" font-size="14">Live in PoC</text>
+  <text x="60" y="468" fill="#e2e8f0" font-family="system-ui" font-size="13">" Sentinel GET /api/cameras, /state, /stream</text>
+  <text x="60" y="492" fill="#e2e8f0" font-family="system-ui" font-size="13">" OSM / Leaflet GIS tiles</text>
+  <text x="60" y="516" fill="#e2e8f0" font-family="system-ui" font-size="13">" GUSIP REST /api/v1 + WebSocket /ws</text>
+  <text x="60" y="540" fill="#e2e8f0" font-family="system-ui" font-size="13">" RTSP � ONVIF � vendor_api adapters</text>
+  <text x="60" y="564" fill="#e2e8f0" font-family="system-ui" font-size="13">" Tesseract OCR on sampled gov frames</text>
+  <text x="60" y="588" fill="#94a3b8" font-family="system-ui" font-size="12">ffmpeg grab � MinIO evidence � Redis bus</text>
+
+  <rect x="490" y="408" width="430" height="210" rx="8" fill="#0f172a" stroke="#fb923c"/>
+  <text x="510" y="438" fill="#fdba74" font-family="system-ui" font-size="14">Interface reserved (not called)</text>
+  <text x="510" y="468" fill="#e2e8f0" font-family="system-ui" font-size="13">" VAHAN / SARTHI vehicle lookup</text>
+  <text x="510" y="492" fill="#e2e8f0" font-family="system-ui" font-size="13">" eGujCop FIR / case bind</text>
+  <text x="510" y="516" fill="#e2e8f0" font-family="system-ui" font-size="13">" AFIS / NAFIS (no bulk dump)</text>
+  <text x="510" y="540" fill="#e2e8f0" font-family="system-ui" font-size="13">" POST /api/v1/integrations/lookup</text>
+  <text x="510" y="576" fill="#94a3b8" font-family="system-ui" font-size="12">Requires MoU + department mTLS before prod</text>
+
+  <rect x="940" y="408" width="420" height="210" rx="8" fill="#0f172a" stroke="#d4af37"/>
+  <text x="960" y="438" fill="#fde68a" font-family="system-ui" font-size="14">Identity &amp; scope</text>
+  <text x="960" y="468" fill="#e2e8f0" font-family="system-ui" font-size="13">" Operator  statewide SOC wall</text>
+  <text x="960" y="492" fill="#e2e8f0" font-family="system-ui" font-size="13">" Investigator  search + export</text>
+  <text x="960" y="516" fill="#e2e8f0" font-family="system-ui" font-size="13">" Coordinator  home dept + break-glass</text>
+  <text x="960" y="540" fill="#e2e8f0" font-family="system-ui" font-size="13">" Admin  users, bulk onboard, audit</text>
+  <text x="960" y="576" fill="#94a3b8" font-family="system-ui" font-size="12">Prod: Keycloak OIDC � PoC: JWT</text>
+
+  <!-- Event contract -->
+  <rect x="40" y="640" width="1320" height="230" rx="8" fill="#0f172a" stroke="#334155"/>
+  <text x="60" y="672" fill="#94a3b8" font-family="system-ui" font-size="12" letter-spacing="1">NORMALISED EVENT (identical on every source path)</text>
+  <text x="60" y="708" fill="#86efac" font-family="ui-monospace, monospace" font-size="14">{ "camera_id", "timestamp", "event_type": "anpr", "object_type": "vehicle",</text>
+  <text x="60" y="732" fill="#86efac" font-family="ui-monospace, monospace" font-size="14">  "plate_number": "GJ 01 ST 0001", "confidence": 0.94,</text>
+  <text x="60" y="756" fill="#86efac" font-family="ui-monospace, monospace" font-size="14">  "bbox": {"x","y","w","h"}, "global_track_id", "source_type": "sentinel|rtsp|onvif|vendor_api" }</text>
+  <text x="60" y="796" fill="#cbd5e1" font-family="system-ui" font-size="13">Outage: one VMS down � those cameras offline; others continue. Worker restart; bus retains recent events. UI resubscribes WebSocket.</text>
+  <text x="60" y="822" fill="#94a3b8" font-family="system-ui" font-size="12">Demo plates: GJ 01 ST 0001 (Ahmedabad�Gandhinagar) � GJ 05 BL 9999 (Surat). Jury plate: add on Watchlist, wait for Sentinel ANPR sample.</text>
+  <text x="60" y="848" fill="#64748b" font-family="system-ui" font-size="11">GUSIP does not replace departmental VMS. Full bitstream is not copied statewide.</text>
+</svg>
