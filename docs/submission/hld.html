@@ -5,74 +5,64 @@
   <title>GUSIP High-Level Design</title>
   <style>
     @page { size: A4; margin: 16mm; }
-    body { font-family: "Segoe UI", system-ui, sans-serif; color: #0f172a; max-width: 820px; margin: 24px auto; line-height: 1.45; }
-    h1 { color: #92400e; font-size: 22px; }
-    h2 { color: #a16207; font-size: 16px; margin-top: 1.4em; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; }
-    .meta { color: #64748b; font-size: 13px; }
-    pre { background: #0f172a; color: #e2e8f0; padding: 12px; font-size: 12px; overflow: auto; }
+    body { font-family: "IBM Plex Sans", "Segoe UI", sans-serif; color: #121820; max-width: 760px; margin: 28px auto; line-height: 1.45; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    h2 { font-size: 15px; margin: 1.5em 0 0.5em; color: #6b4f12; letter-spacing: 0.02em; }
+    .meta { color: #5c6778; font-size: 12px; }
+    p, li { font-size: 13.5px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th, td { border: 1px solid #d7dce4; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f4efe2; }
+    .callout { background: #f7f1e1; border-left: 4px solid #c9a227; padding: 10px 14px; }
+    pre { background: #121820; color: #e8edf5; padding: 14px 16px; font-size: 12px; line-height: 1.5; }
   </style>
 </head>
 <body>
-  <p class="meta">Gujarat Police Innovation Challenge 2026 · Version 1.0 · 18 August 2026</p>
-  <h1>GUSIP High-Level Design / Architecture</h1>
-  <p><strong>Gujarat Unified Surveillance Intelligence Platform</strong> — hybrid overlay: Model 1 CCTV registry and GIS (mandatory) + Model 2 unified viewing and selective analytics + Model 3 VMS federation/middleware. <strong>Not Model 4</strong> (no replacement of departmental VMS, no central 24×7 video store).</p>
+  <p class="meta">Gujarat Police Innovation Challenge 2026 · GUSIP HLD · 21 August 2026</p>
+  <h1>High-level design — keep the NVRs, share the hits</h1>
+  <p>GUSIP sits <em>beside</em> existing cameras. Traffic, commissionerate, AMC, highway, railway, and the official Sentinel evaluation wall keep recording. We read streams, pull a still when needed, and publish a small event: who, where, when, plate, photo.</p>
+  <p class="callout">If a stolen Fortuner crosses five junctions in Ahmedabad and Gandhinagar, the operator should see one track — not five phone calls.</p>
 
-  <h2>1. Problem</h2>
-  <p>Gujarat’s CCTV estate is departmental and heterogeneous. The force needs statewide watchlists, multi-camera tracking, and one control-room picture without ripping out existing NVRs.</p>
+  <h2>1. What we refuse to build</h2>
+  <p>A statewide NVR (official Model 4). Copying ~80,000 continuous streams to one hall is a WAN and storage project, not an investigation project. Departmental VMS remains the system of record. GUSIP never writes PTZ or overwrites a local recording.</p>
 
-  <h2>2. Principles</h2>
-  <ol>
-    <li>Do not break source operations. Adapters are read-oriented.</li>
-    <li>Centralise intelligence, not video. Metadata, events, embeddings, alerts, short clips only.</li>
-    <li>Federation before replacement (RTSP, ONVIF Profile S/T, vendor SDKs, Sentinel evaluation API).</li>
-    <li>Zero-trust internally; every query audited; purpose required on Investigate.</li>
-    <li>Horizontal workers: ingest, inference, tracking, matching scale independently.</li>
-  </ol>
+  <h2>2. Picture of the system</h2>
+  <pre>Cameras / VMS / Sentinel wall     (video stays here)
+        |  read-only RTSP, ONVIF, vendor API, or Sentinel /stream
+GUSIP adapter                      (ffmpeg still, health ping)
+        |  one event JSON
+Bus (Redis now, Kafka later)
+        |  ANPR · YOLO · watchlist · coalesce
+Control room                       (wall, yellow map pins, Investigate)
+Stores: PostGIS cameras+tracks · Redis live+break-glass · MinIO stills</pre>
+  <p>Companion drawing: <code>architecture.svg</code>. Same story as a left-to-right strip.</p>
 
-  <h2>3. Logical architecture</h2>
-  <pre>Departmental VMS / NVR / Sentinel
-        |  RTSP / ONVIF / vendor API / official live-feed API (read-only)
-Ingestion / Adapter Layer
-        |  sampled frames + camera telemetry
-Federation Middleware
-        |  JWT RBAC, protocol translation, Redis/Kafka event bus
-Central Intelligence
-        |  wall · ANPR · track · watchlist · alerts · search · GIS
-Data: PostgreSQL+PostGIS · Redis · MinIO
-UI: React control room</pre>
-  <p>Upload <code>architecture.svg</code> with this PDF if the form wants a diagram file.</p>
+  <h2>3. Two jobs the software must finish</h2>
+  <p><strong>Hit.</strong> Frame in → plate or person class → watchlist match → if that camera already has an open card, bump ×N. Else new alert + encrypted snapshot. WebSocket to the wall. Large pane switches. Target on the Paldi→Gandhinagar corridor: under 8 seconds.</p>
+  <p><strong>Reconstruct.</strong> Officer picks a purpose (stolen vehicle, wanted person, evaluation…). Search will not run without it. Result is a GIS polyline of hops. Case folder can attach the latest alert. Export is blocked for operators.</p>
 
-  <h2>4. Mapping to official models</h2>
+  <h2>4. Who sees what</h2>
   <table>
-    <tr><th>Model</th><th>GUSIP realisation</th></tr>
-    <tr><td>1 Registry / GIS</td><td>Camera master, PostGIS, health, AMC, gap analysis</td></tr>
-    <tr><td>2 Unified viewing</td><td>Control-room wall, auto-focus alerts, Investigate, cases</td></tr>
-    <tr><td>3 Federation</td><td>Per-source adapters; existing VMS untouched</td></tr>
-    <tr><td>4 Central VMS + AI farm</td><td>Out of scope for this proposal</td></tr>
+    <tr><th>Login</th><th>Sees</th><th>Cannot</th></tr>
+    <tr><td>operator</td><td>Statewide wall, ack alerts, search with purpose</td><td>CSV / case JSON</td></tr>
+    <tr><td>investigator</td><td>Above + watchlist write + export</td><td>Create users</td></tr>
+    <tr><td>coordinator (Ahmedabad)</td><td>Home district only</td><td>Other districts unless 5–120 min break-glass with FIR text</td></tr>
+    <tr><td>admin</td><td>Everything, including onboard and audit</td><td>—</td></tr>
   </table>
 
-  <h2>5. PoC vs production</h2>
+  <h2>5. PoC that is running vs later</h2>
   <table>
-    <tr><th>Block</th><th>PoC</th><th>Production</th></tr>
-    <tr><td>API</td><td>FastAPI</td><td>Same, behind gateway</td></tr>
-    <tr><td>Bus</td><td>Redis Streams</td><td>Kafka / Redpanda + ACLs</td></tr>
-    <tr><td>GIS</td><td>PostgreSQL 16 + PostGIS</td><td>HA + replicas</td></tr>
-    <tr><td>Evidence</td><td>Fernet snapshots + MinIO</td><td>KMS envelope encryption</td></tr>
-    <tr><td>Auth</td><td>JWT four roles</td><td>Keycloak OIDC, MFA</td></tr>
-    <tr><td>AI</td><td>Simulator ≡ event contract + Tesseract on Sentinel frames</td><td>YOLOv8/11 + ByteTrack + Indian ANPR on regional GPUs</td></tr>
+    <tr><th></th><th>Now</th><th>Commissionerate / state</th></tr>
+    <tr><td>Gov data</td><td>31 Sentinel cameras, live proxy + Tesseract stills</td><td>Same adapter, more IDs</td></tr>
+    <tr><td>Own data</td><td>50 mixed RTSP / ONVIF / vendor-style cameras</td><td>Point adapters at real URLs</td></tr>
+    <tr><td>AI</td><td>YOLOv8n on CPU when installed; simulator shares the same event</td><td>Regional GPU, ByteTrack, Indian ANPR</td></tr>
+    <tr><td>Login</td><td>JWT, four demo users</td><td>Keycloak, MFA</td></tr>
+    <tr><td>Lookups</td><td>VAHAN / eGujCop / AFIS not called</td><td>After MoU + mTLS</td></tr>
   </table>
 
-  <h2>6. Key flows</h2>
-  <p><strong>Watchlist hit:</strong> adapter samples → detect/OCR → bus → match (coalesce same camera+list) → WebSocket → wall auto-focus → ack + audit. Target &lt; 8 s on PoC corridor.</p>
-  <p><strong>Investigate:</strong> purpose required → events/plate route → GIS polyline → case export (role-gated).</p>
-  <p><strong>Outage:</strong> one VMS unreachable → those cameras offline; others continue; auto-reconnect.</p>
+  <h2>6. Failure</h2>
+  <p>If Surat’s VMS dies, Surat cameras go grey. Ahmedabad and Sentinel keep playing. Worker reconnects. Break-glass grants die when Redis TTL says so, even if the coordinator forgets to click End.</p>
 
-  <h2>7. PoC scope</h2>
-  <p>50 own/demo cameras (rtsp/onvif/vendor_api) across Gujarat cities; 31 official Sentinel cameras; stolen corridor Ahmedabad→Gandhinagar; RBAC, audit, case export; documented 80k scale-out. Live VAHAN/SARTHI/eGujCop/AFIS are stubs only.</p>
-
-  <p class="meta">Companion diagram: workflow.svg · Full narrative: docs/HLD.md and docs/architecture.md in the repository.</p>
+  <p class="meta">Demo: http://localhost:8080 · operator / GUSIP@ops2026 · plate GJ 01 ST 0001. Narrative docs in the repo: architecture.md, security.md, scalability.md.</p>
 </body>
 </html>

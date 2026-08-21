@@ -1,39 +1,37 @@
 # GUSIP — Gujarat Unified Surveillance Intelligence Platform
 
 **Gujarat Police Innovation Challenge 2026**  
-Hybrid architecture: Model 1 (registry/GIS) + Model 2 (unified viewing) + Model 3 (federation middleware)  
-Not Model 4 — departmental VMS is not replaced. PoC: ~50 cameras · Scale path: 80,000+
+One wall for cameras that already exist. Video stays on the departmental NVR. Hits, stills, and the GIS line come here.
+
+PoC: 50 own/demo cameras + 31 official Sentinel feeds · Scale path: 80,000+ without a statewide NVR
 
 ## Proposed solution
 
-GUSIP (Gujarat Unified Surveillance Intelligence Platform) is a hybrid overlay on the mandatory **Model 1** CCTV registry and GIS. It federates existing departmental VMS/NVR estates (**Model 3**) and gives one control-room picture with selective analytics (**Model 2**). It is not **Model 4**: departmental video systems stay in place as the system of record; GUSIP does not ingest 24×7 statewide video.
+A stolen Fortuner leaves Paldi and is on the Gandhinagar link six minutes later. Today that is three control rooms and a WhatsApp still. GUSIP is the statewide **picture** of cameras that already exist — Traffic, commissionerate, AMC, highway, railway, and the official Sentinel wall. It is not a new NVR. Video stays on the box that already records it. We lift a still, a plate, a GPS pin, and an alert.
 
-Adapters (RTSP, ONVIF, vendor API, and the official Sentinel evaluation feeds) normalise cameras into a PostGIS registry. Only **metadata, detections, short evidence clips, and alerts** move to the centre. A statewide event bus drives ANPR, watchlist matching, multi-camera tracks, and an audited Investigate search. Operators work a unified wall that auto-focuses on watchlist hits (manage-by-exception). Access is four visible roles with purpose-bound search, export controls, and time-boxed break-glass for other districts.
+The operator’s wall defaults to government feeds (Chimanbhai Bridge is live from live.sentinelgujarat.in). A watchlist hit jumps that camera into the large pane; repeats on the same camera become ×27, not 27 cards. Yellow numbered pins on the map are open alerts with the screenshot attached. Search will not run until the officer picks a purpose. An Ahmedabad coordinator only sees Ahmedabad until they type an FIR reason and take a time-boxed break-glass.
 
-The PoC runs ~50 own/demo cameras plus 31 official government feeds, with a documented path to 80,000+ cameras by scaling adapters and regional AI, not by building a central NVR. Departmental VMS systems continue to operate independently (FR-2.5).
+The PoC is 50 departmental-style cameras plus 31 official Sentinel cameras. Eighty thousand cameras later we still do not store eighty thousand movies in Gandhinagar — we store events, and we add GPUs where the adapters sit.
 
 ## Key features
 
-- Statewide CCTV registry with GIS map, health, ownership, and coverage-gap analysis (Model 1)
-- Federation adapters for RTSP, ONVIF, vendor APIs, and official Sentinel live feeds without replacing departmental VMS
-- Unified control-room wall: government feeds, own/demo cameras, or both, with GIS overlay
-- Alert-driven auto-focus: watchlist hit enlarges the camera, pages the wall, and coalesces repeat hits
-- ANPR and multi-camera tracking (stolen / blacklisted vehicles, wanted / missing persons)
-- Investigate search by plate, time, city, and attributes, with mandatory purpose and full audit
-- Watchlist, case folders, and role-gated evidence export (CSV / case JSON)
-- Four-role RBAC with department scope and time-boxed break-glass (reason + auto-expire)
-- Operator watermark and immutable-style audit of view, search, export, and ack
-- Same event contract for simulated PoC detections and future YOLO/ByteTrack workers
+- Gov-feeds tab plays official Sentinel cameras through our proxy (no VMS swap)
+- Own/demo wall for RTSP / ONVIF / vendor-style cameras on the same event JSON
+- Watchlist hit enlarges the camera; same plate on same camera stacks as ×N
+- Yellow map badges = open alerts; click for plate, confidence, evidence still
+- Stolen-corridor demo: GJ 01 ST 0001 across five junctions in under 8 seconds
+- Investigate requires a purpose (stolen, wanted, evaluation…) and writes audit
+- Four logins: operator cannot export; IO can; coordinator is home-district + break-glass
+- GIS coverage gaps so the next camera is bought for a dark road, not a vendor quota
 
 ## Expected impact
 
-- **Time-to-alert:** PoC path targets under 8 seconds from camera event to inbox (stolen-vehicle corridor demo).
-- **Cross-district pursuit:** one GIS journey instead of phone hops between control rooms; coordinator break-glass unlocks other districts with an extra audit trail.
-- **Cost vs Model 4:** avoid statewide 24×7 bitstream storage and WAN for ~80,000 streams; keep paying AMC on existing NVRs; centralise clips/snapshots only.
-- **Coverage decisions:** GIS gap analysis so new cameras go where density is low, not where a vendor already sold a VMS.
-- **Accountability:** every search states a purpose; operators cannot export; CSV/case export is investigator/coordinator/admin only.
-- **Continuity:** one departmental VMS outage does not blank the state picture; source systems keep running independently.
-- **Scale path:** 50-camera PoC on a small VM with no GPU; city pilot then regional GPU farms; event bus sized for ~16,000 filtered events/s at 80,000 cameras.
+- **Minutes to seconds:** Paldi → SG Highway → Gandhinagar is one GIS line, not three phone calls.
+- **No second NVR bill:** 80,000 streams stay on departmental disk; GUSIP keeps stills and clips.
+- **Honest government data:** jury feeds are in the product, not a slide screenshot.
+- **Fewer fat-finger leaks:** no search without purpose; operators cannot download CSV.
+- **One hall down ≠ state blind:** Surat NVR can die; Ahmedabad and Sentinel keep playing.
+- **Where to spend:** gap list (Bhavnagar 2 cameras vs need 4+) instead of another city-centre VMS.
 
 ## Tech stack
 
