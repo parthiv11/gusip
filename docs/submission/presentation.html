@@ -2,125 +2,123 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>GUSIP — Solution presentation</title>
+  <title>GUSIP — Gujarat Police control-room overlay</title>
   <style>
-    @page { size: landscape A4; margin: 12mm; }
+    @page { size: landscape A4; margin: 10mm; }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", system-ui, sans-serif;
-      background: #070b12;
-      color: #e2e8f0;
-    }
-    .slide {
-      width: 100%;
-      min-height: 100vh;
-      padding: 48px 56px;
-      page-break-after: always;
-      break-after: page;
-      border-bottom: 1px solid #1e293b;
-    }
-    h1 { color: #d4af37; font-size: 36px; margin: 0 0 8px; }
-    h2 { color: #d4af37; font-size: 28px; margin: 0 0 20px; }
-    .kicker { color: #94a3b8; letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; }
-    p, li { line-height: 1.5; font-size: 18px; }
-    ul { padding-left: 1.2em; }
-    table { width: 100%; border-collapse: collapse; font-size: 16px; }
-    th, td { border-bottom: 1px solid #334155; text-align: left; padding: 8px 6px; vertical-align: top; }
-    th { color: #d4af37; }
-    .muted { color: #94a3b8; }
-    .gold { color: #fde68a; }
-    @media print {
-      .slide { min-height: auto; height: 180mm; overflow: hidden; border: none; }
-    }
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; background: #05070d; color: #e8edf5; }
+    .slide { width: 100%; min-height: 100vh; padding: 40px 52px; page-break-after: always; break-after: page; }
+    .kicker { color: #c9a227; letter-spacing: 0.18em; text-transform: uppercase; font-size: 11px; font-weight: 600; }
+    h1 { font-size: 40px; margin: 8px 0 6px; color: #f3e6b8; font-weight: 600; }
+    h2 { font-size: 26px; margin: 0 0 16px; color: #f3e6b8; font-weight: 600; }
+    p, li { font-size: 17px; line-height: 1.45; }
+    .lede { font-size: 20px; color: #d7deea; max-width: 42em; }
+    .quiet { color: #8b97ab; font-size: 14px; }
+    .scene { background: #101827; border-left: 4px solid #c9a227; padding: 16px 20px; margin: 18px 0; }
+    .scene strong { color: #f3e6b8; }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; }
+    th { text-align: left; color: #c9a227; font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid #2a3548; }
+    td { padding: 9px 10px 9px 0; border-bottom: 1px solid #1c2533; vertical-align: top; }
+    td:first-child { width: 28%; color: #f3e6b8; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 32px; }
+    .card { background: #101827; padding: 16px 18px; border-radius: 6px; }
+    .card h3 { margin: 0 0 8px; font-size: 15px; color: #c9a227; }
+    ol { padding-left: 1.2em; }
+    code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.92em; color: #f3e6b8; }
+    @media print { .slide { min-height: auto; height: 185mm; overflow: hidden; } }
   </style>
 </head>
 <body>
   <section class="slide">
     <div class="kicker">Gujarat Police Innovation Challenge 2026</div>
-    <h1>GUSIP</h1>
-    <p class="gold">Gujarat Unified Surveillance Intelligence Platform</p>
-    <p>Hybrid architecture: <strong>Model 1</strong> registry/GIS + <strong>Model 2</strong> unified viewing + <strong>Model 3</strong> federation middleware.</p>
-    <p>Not Model 4 — departmental VMS is not replaced. Intelligence overlay, not a statewide NVR.</p>
-    <p class="muted">PoC ~50 cameras + 31 official Sentinel feeds · scale path 80,000+</p>
+    <h1>One wall. The cameras stay where they are.</h1>
+    <p class="lede">GUSIP is a statewide <em>picture</em> of CCTV — not a new NVR. Ahmedabad Traffic, Surat Municipal, highway, railway, and the official Sentinel feeds keep recording locally. We only lift plates, locations, and short evidence when something matches a watchlist.</p>
+    <div class="scene">
+      Tonight: a white Fortuner <strong>GJ 01 ST 0001</strong> is stolen in Paldi. Six minutes later it is on SG Highway, then the Gandhinagar link. One operator sees the hops. Nobody phones three control rooms.
+    </div>
+    <p class="quiet">Running now: 50 departmental-style cameras + 31 official Sentinel feeds (Chimanbhai Bridge, Suvidha Park, Dolatpara…). Path to 80,000 is more adapters and regional GPUs — not 80,000 extra hard disks at SCRB.</p>
   </section>
 
   <section class="slide">
-    <h2>Problem</h2>
-    <ul>
-      <li>Gujarat CCTV is large, departmental, and mixed (police, traffic, municipal, highway, railway, coastal).</li>
-      <li>Replacing every VMS is unaffordable and operationally unacceptable.</li>
-      <li>The force still needs statewide watchlists, multi-camera tracking, and one control-room picture.</li>
-    </ul>
-    <p class="gold">Design rule: centralise metadata, events, clips, and alerts — not 24×7 video.</p>
+    <h2>What is broken today</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>The estate</h3>
+        <p>Cameras already exist. They sit on different VMS boxes, different vendors, different passwords. An IO in Ahmedabad cannot see a Surat hit unless someone WhatsApps a still.</p>
+      </div>
+      <div class="card">
+        <h3>The temptation</h3>
+        <p>Buy one giant statewide VMS, copy every stream to Gandhinagar, and run AI in the middle. That is Model 4. It is the most expensive way to lose departmental ownership and fill a WAN.</p>
+      </div>
+      <div class="card">
+        <h3>The actual job</h3>
+        <p>Find a plate. Follow it across junctions. Keep an audit of who searched and why. Do it in seconds, not after the FIR is typed.</p>
+      </div>
+      <div class="card">
+        <h3>Our rule</h3>
+        <p>Video stays at the NVR that already paid for the disk. GUSIP takes the <strong>event</strong>: time, camera, plate, one snapshot, map pin.</p>
+      </div>
+    </div>
   </section>
 
   <section class="slide">
-    <h2>Approach (what to tick on the form)</h2>
-    <table>
-      <tr><th>Official model</th><th>GUSIP</th></tr>
-      <tr><td>Model 1 (mandatory)</td><td>Camera registry, PostGIS, health, coverage gaps</td></tr>
-      <tr><td>Model 2</td><td>Unified wall, ANPR, watchlist, Investigate, cases</td></tr>
-      <tr><td>Model 3</td><td>RTSP / ONVIF / vendor / Sentinel adapters; VMS untouched</td></tr>
-      <tr><td>Model 4</td><td>Not this product</td></tr>
-    </table>
-    <p class="muted">Primary solution model: Hybrid / Innovative Architecture. Confirm Model 1.</p>
-  </section>
-
-  <section class="slide">
-    <h2>Architecture (one sentence)</h2>
-    <p>Departmental VMS → read-only adapters → federation bus (Redis/Kafka) → intelligence (ANPR, track, watchlist, GIS) → React control room.</p>
-    <p>Stores: PostgreSQL+PostGIS, Redis, MinIO (encrypted snapshots). On-premise Docker Compose; Kubernetes for city/state.</p>
-    <p class="muted">See architecture.svg (upload that file for the HLD/architecture form field).</p>
-  </section>
-
-  <section class="slide">
-    <h2>Live path the jury can run</h2>
+    <h2>How an operator actually uses it</h2>
     <ol>
-      <li>Control room → <strong>Gov feeds</strong> → Sync Sentinel (live.sentinelgujarat.in).</li>
-      <li>Play an official camera through the GUSIP stream proxy.</li>
-      <li>Add the jury plate on Watchlist; wait for sequential ANPR sample (ffmpeg + Tesseract).</li>
-      <li>Own/demo wall shows federated RTSP/ONVIF/vendor cameras and scripted corridors.</li>
-      <li>Investigate <code>GJ 01 ST 0001</code> with purpose = evaluation → GIS hops.</li>
+      <li>Sign in as <code>operator</code>. The wall defaults to <strong>Gov feeds</strong> — Chimanbhai Bridge is already playing from live.sentinelgujarat.in.</li>
+      <li>A watchlist hit lands. The camera jumps into the large pane. Repeat hits on the same camera become <strong>×27</strong>, not 27 cards.</li>
+      <li>Yellow numbered pins on the map are open alerts. Click one: screenshot evidence, plate, confidence.</li>
+      <li>Investigate <code>GJ 01 ST 0001</code>, purpose = stolen vehicle. GIS draws Paldi → SG Highway → Gandhinagar.</li>
+      <li>A coordinator in Ahmedabad only sees home-district cameras until they type an FIR reason and take a 30-minute break-glass.</li>
     </ol>
-    <p class="muted">You may demo own data, but the form requires the provided government feeds as well.</p>
+    <p class="quiet">Operators cannot download CSV. Investigators can. Every search writes purpose, user, and IP to the audit trail.</p>
   </section>
 
   <section class="slide">
-    <h2>Control-room behaviour</h2>
-    <ul>
-      <li>Watchlist hit auto-focuses the camera (large pane), coalesces repeats (×N).</li>
-      <li>Four roles: operator, investigator, coordinator, admin.</li>
-      <li>Search requires an investigation purpose (audited).</li>
-      <li>Coordinator is home-department scoped; break-glass is time-boxed + extra audit.</li>
-      <li>Operators cannot export CSV/case files.</li>
-    </ul>
+    <h2>What talks to what</h2>
+    <table>
+      <tr><th>Layer</th><th>In this PoC you can touch</th></tr>
+      <tr><td>Sources (untouched)</td><td>Police / traffic / AMC NVRs stay on. Sentinel evaluation wall at live.sentinelgujarat.in.</td></tr>
+      <tr><td>Adapters</td><td>RTSP, ONVIF, vendor API, plus a Sentinel stream proxy. Read-only. No PTZ takeover.</td></tr>
+      <tr><td>Event</td><td>One JSON shape for every camera: plate, bbox, GPS, track id, snapshot.</td></tr>
+      <tr><td>Matching</td><td>Watchlist (stolen / blacklisted / wanted / missing). Same plate on same camera coalesces.</td></tr>
+      <tr><td>Room</td><td>React wall, GIS (Leaflet + PostGIS), Investigate, cases, four roles.</td></tr>
+    </table>
+    <p class="quiet">VAHAN, SARTHI, eGujCop, AFIS are sockets we did not pretend to call. They need MoU and mTLS, not a demo key.</p>
   </section>
 
   <section class="slide">
-    <h2>Impact</h2>
-    <ul>
-      <li>Time-to-alert: PoC corridor targets &lt; 8 seconds camera → inbox.</li>
-      <li>One GIS journey across districts instead of phone hops.</li>
-      <li>Avoid storing ~80,000 continuous streams (vs Model 4 central VMS).</li>
-      <li>GIS gap analysis for where to buy the next camera.</li>
-      <li>One VMS outage does not blank the state picture.</li>
-    </ul>
+    <h2>If you only remember four numbers</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>&lt; 8 seconds</h3>
+        <p>Stolen-corridor demo: five cameras, Ahmedabad west to Gandhinagar, plate in the inbox before the eighth second.</p>
+      </div>
+      <div class="card">
+        <h3>31 official feeds</h3>
+        <p>Jury-provided Sentinel cameras, live in the Gov-feeds tab. Not a stock video. Sync Sentinel, click SEN-1.</p>
+      </div>
+      <div class="card">
+        <h3>4 roles, 1 purpose</h3>
+        <p>Operator, IO, coordinator, admin. Search will not run until you pick why (stolen, wanted, evaluation…).</p>
+      </div>
+      <div class="card">
+        <h3>0 extra NVRs</h3>
+        <p>At 80,000 cameras we still do not store 80,000 bitstreams. We store events. Disk stays with the department that already bought it.</p>
+      </div>
+    </div>
   </section>
 
   <section class="slide">
-    <h2>Stack</h2>
-    <p>React (Vite) · FastAPI · PostgreSQL/PostGIS · Redis · MinIO · Docker · Leaflet · Tesseract · YOLOv8 hook (simulate in PoC)</p>
-    <p class="muted">APIs: Sentinel live-feed simulator, OSM tiles, GUSIP REST/WebSocket. Cloud: on-premise.</p>
-    <p>VAHAN / SARTHI / eGujCop / AFIS are interface stubs only — no live queries without MoU and mTLS.</p>
-  </section>
-
-  <section class="slide">
-    <h2>Ask</h2>
-    <p>Fund GUSIP as <strong>intelligence middleware + regional AI</strong>, not as a statewide NVR.</p>
-    <p>Use this PoC to prove the event contract (own feeds + official Sentinel data), then attach real ONVIF/RTSP in one commissionerate before buying GPU at scale.</p>
-    <p class="gold">Demo: http://localhost:8080 · operator / GUSIP@ops2026</p>
-    <p class="muted">Authorised law-enforcement evaluation only.</p>
+    <h2>What to run in the hall</h2>
+    <ol>
+      <li>http://localhost:8080 — <code>operator / GUSIP@ops2026</code></li>
+      <li>Control Room → <strong>Gov feeds</strong> → Sync Sentinel → play Chimanbhai Bridge.</li>
+      <li><code>docker compose exec worker python -m app.workers.demo_scenario</code> — watch GJ 01 ST 0001 hop.</li>
+      <li>Investigate that plate, purpose Evaluation. Show the orange GIS line.</li>
+      <li>Log in as <code>coordinator</code>. Only Ahmedabad. Hit Break-glass with an FIR sentence. Statewide cameras appear. End it. They vanish.</li>
+    </ol>
+    <p class="lede" style="margin-top:28px">Ask: fund the middleware and the regional GPUs. Do not fund a second copy of every camera in the state.</p>
+    <p class="quiet">Authorised law-enforcement evaluation. GUSIP — Gujarat Unified Surveillance Intelligence Platform.</p>
   </section>
 </body>
 </html>

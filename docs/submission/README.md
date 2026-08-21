@@ -28,11 +28,11 @@ Form text: you may use own data **but you must also show their provided feeds**.
 
 Record 3–5 minutes, 1920×1080 (OBS or phone of the screen):
 
-1. Login `operator` / `GUSIP@ops2026` — hybrid Model 1+2+3, VMS not replaced.
-2. **Gov feeds** → Sync Sentinel → play an official camera (`live.sentinelgujarat.in`).
-3. Own/demo wall + a watchlist hit auto-focus (`GJ 05 BL 9999` or stolen corridor).
-4. Investigate `GJ 01 ST 0001` with purpose **evaluation** → GIS hops.
-5. Mention coordinator break-glass and that operators cannot export.
+1. Login `operator` / `GUSIP@ops2026`. Say: cameras stay on their NVRs; this is the hit wall.
+2. **Gov feeds** → Sync Sentinel → play Chimanbhai Bridge (must be on camera).
+3. Run `demo_scenario` — GJ 01 ST 0001 hops; wall auto-focuses; map pins yellow.
+4. Investigate that plate, purpose **evaluation** — orange GIS line Paldi to Gandhinagar.
+5. Coordinator: only Ahmedabad until break-glass with an FIR sentence. Operators cannot export CSV.
 
 Upload to Google Drive → **Anyone with the link can view** → paste that URL in the video field.
 
