@@ -10,7 +10,7 @@ Copy the URL in the **Paste this** column into the Google Form. Files are alread
 | **High-level design / architecture** (PDF / PNG / JPG / JPEG / SVG) | https://github.com/parthiv11/gusip/raw/main/docs/submission/architecture.svg |
 | **Workflow / integration diagram** (PDF / PNG / JPG / JPEG / SVG) | https://github.com/parthiv11/gusip/raw/main/docs/submission/workflow.svg |
 | **Screenshots folder** | https://github.com/parthiv11/gusip/tree/main/docs/submission/screenshots |
-| **Solution video** (Google Drive) | *You still record this* — must include official Sentinel / Gov feeds. Then paste the Drive link. |
+| **Solution video** (Google Drive) | Recorded file: `docs/submission/GUSIP-demo.mp4` (2:44, 1080p). **Upload that file to Google Drive**, share Anyone with the link, paste the Drive URL. GitHub will not satisfy this field. |
 | **Any other document** | https://github.com/parthiv11/gusip |
 
 ## Backup links (same files)
@@ -24,17 +24,18 @@ Copy the URL in the **Paste this** column into the Google Form. Files are alread
 
 ## Video (required — Drive only)
 
-Form text: you may use own data **but you must also show their provided feeds**.
+File on disk / GitHub: [GUSIP-demo.mp4](https://github.com/parthiv11/gusip/raw/main/docs/submission/GUSIP-demo.mp4)  
+1920×1080 · 2:44 · captions on screen (no voiceover) · official Sentinel wall is in the first minute.
 
-Record 3–5 minutes, 1920×1080 (OBS or phone of the screen):
+What it shows:
 
-1. Login `operator` / `GUSIP@ops2026`. Say: cameras stay on their NVRs; this is the hit wall.
-2. **Gov feeds** → Sync Sentinel → play Chimanbhai Bridge (must be on camera).
-3. Run `demo_scenario` — GJ 01 ST 0001 hops; wall auto-focuses; map pins yellow.
-4. Investigate that plate, purpose **evaluation** — orange GIS line Paldi to Gandhinagar.
-5. Coordinator: only Ahmedabad until break-glass with an FIR sentence. Operators cannot export CSV.
+1. Operator login — Chimanbhai Bridge from live.sentinelgujarat.in
+2. SEN-15 Suvidha Park — second official camera
+3. Own/demo wall — stolen Fortuner GJ 01 ST 0001 hops
+4. Investigate — evaluation purpose, orange GIS line Ahmedabad → Gandhinagar
+5. Ahmedabad coordinator — home cameras only, then break-glass FIR 112/2026
 
-Upload to Google Drive → **Anyone with the link can view** → paste that URL in the video field.
+**Form will reject a GitHub URL here.** Download the mp4, upload to Google Drive → Anyone with the link can view → paste that Drive link.
 
 ## Screenshots already in the folder
 
