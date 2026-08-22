@@ -38,7 +38,10 @@ export default function GovPlayer({
   const ref = useRef<HTMLVideoElement>(null);
   const sid = sentinelId(camera);
   const src = streamProxy(camera);
-  const hlsUrl = typeof camera.extra?.hls_url === "string" ? camera.extra.hls_url : null;
+  const hlsUrl =
+    (typeof camera.extra?.hls_url === "string" && camera.extra.hls_url) ||
+    (typeof camera.extra?.hls_live_url === "string" && camera.extra.hls_live_url) ||
+    null;
   const [videoReady, setVideoReady] = useState(false);
   const [bust, setBust] = useState(() => Date.now());
   const [posterOk, setPosterOk] = useState(true);
@@ -74,15 +77,8 @@ export default function GovPlayer({
         if ((video.videoWidth || 0) > 16) setVideoReady(true);
       };
 
-      if (hlsUrl && Hls.isSupported()) {
-        hls = new Hls({ startPosition: offset, maxBufferLength: 30 });
-        hls.loadSource(hlsUrl.startsWith("http") ? hlsUrl : `https://live.sentinelgujarat.in${hlsUrl}`);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-        video.addEventListener("playing", markReady);
-        return;
-      }
-      if (src) {
+      function playHttpFallback() {
+        if (!src) return;
         video.src = src;
         const onMeta = () => {
           try {
@@ -90,13 +86,31 @@ export default function GovPlayer({
               video.currentTime = offset % video.duration;
             }
           } catch {
-            /* ignore */
+            /* live RTSP/HLS has no seek; HTTP /stream is a looping file */
           }
-          if (autoPlay) video.play().catch(() => {});
+          if (autoPlay) video.play().catch(() => undefined);
         };
         video.addEventListener("loadedmetadata", onMeta, { once: true });
         video.addEventListener("playing", markReady);
       }
+
+      if (hlsUrl && Hls.isSupported()) {
+        const resolved = hlsUrl.startsWith("http") ? hlsUrl : `https://live.sentinelgujarat.in${hlsUrl}`;
+        hls = new Hls({ startPosition: offset, maxBufferLength: 30 });
+        hls.loadSource(resolved);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => undefined));
+        hls.on(Hls.Events.ERROR, (_e, data) => {
+          if (data.fatal) {
+            hls?.destroy();
+            hls = null;
+            playHttpFallback();
+          }
+        });
+        video.addEventListener("playing", markReady);
+        return;
+      }
+      playHttpFallback();
     }
     start();
     return () => {

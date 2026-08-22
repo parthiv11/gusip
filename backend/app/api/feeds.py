@@ -66,7 +66,10 @@ async def preview(sentinel_id: str, token: str | None = Query(default=None)):
 async def proxy_stream(sentinel_id: str, request: Request, token: str | None = Query(default=None)):
     _require_token(token)
     url = f"{settings.sentinel_base_url.rstrip('/')}/stream/{sentinel_id}"
-    headers = {"User-Agent": "GUSIP-Sentinel-Adapter/1.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)",
+        "Referer": "https://sentinel.gujarat.gov.in/resource",
+    }
     rng = request.headers.get("range")
     if rng:
         headers["Range"] = rng

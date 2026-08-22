@@ -86,3 +86,44 @@ def test_purpose_required():
 def test_alert_fingerprint_is_camera_and_watchlist():
     assert alert_fingerprint(4, 12) == "4:12"
     assert alert_fingerprint(4, 12) != alert_fingerprint(4, 13)
+
+
+def test_sentinel_ingest_catalogue_shape():
+    from app.workers.sentinel import grab_cmd, inference_url, normalize_camera
+
+    row = normalize_camera(
+        {
+            "id": "1",
+            "name": "Camera 1",
+            "location": "01 Chiman bhai Bridge",
+            "codec": "hevc",
+            "live": True,
+            "rtsp_url": "rtsp://live.corp8.cloud:8554/stream/1",
+            "webrtc_url": "http://live.corp8.cloud:8889/stream/1/whep",
+            "hls_live_url": "/live/stream/1/index.m3u8",
+        },
+        base_url="https://live.corp8.cloud",
+    )
+    assert row["id"] == "1"
+    assert row["live"] is True
+    assert row["rtsp_url"].startswith("rtsp://")
+    assert row["whep_url"].endswith("/whep")
+    assert row["hls_url"] == "https://live.corp8.cloud/live/stream/1/index.m3u8"
+    assert row["stream_url"].endswith("/stream/1")
+    assert inference_url(row) == row["rtsp_url"]
+    assert inference_url({"hls_url": row["hls_url"], "stream_url": row["stream_url"]}) == row["hls_url"]
+    assert inference_url({"stream_url": row["stream_url"]}) is None
+
+    cmd = grab_cmd(row["rtsp_url"])
+    assert "-rtsp_transport" in cmd and "tcp" in cmd
+    assert "-ss" not in cmd
+    hls_cmd = grab_cmd(row["hls_url"])
+    assert "-user_agent" in hls_cmd
+    assert "-rtsp_transport" not in hls_cmd
+    from app.workers.sentinel import _playlist_refs
+
+    refs = _playlist_refs("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nstream.m3u8\n", "https://live.corp8.cloud/live/stream/1/index.m3u8?cookieCheck=1")
+    assert refs == ["https://live.corp8.cloud/live/stream/1/stream.m3u8?cookieCheck=1"]
+    offline = normalize_camera({"id": "9", "status": "offline", "live": False})
+    assert offline["live"] is False
+    assert "8554/stream/9" in offline["rtsp_url"]

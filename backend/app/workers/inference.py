@@ -29,12 +29,14 @@ YOLO_CLASSES = [0, 1, 2, 3, 5, 7]
 
 
 def inference_available() -> bool:
+    if settings.inference_mode != "yolo":
+        return False
     try:
-        import ultralytics  # noqa: F401
+        from ultralytics import YOLO  # noqa: F401
 
         return True
     except Exception:
-        return settings.inference_mode == "yolo"
+        return False
 
 
 def get_model() -> Any:
@@ -133,7 +135,13 @@ async def emit_detections(cam: Camera, dets: list[dict[str, Any]], jpeg: bytes |
 
 async def yolo_preview_loop() -> None:
     """Run YOLO on the latest Sentinel JPEG previews so Gov feeds get live boxes."""
-    await asyncio.to_thread(warmup)
+    try:
+        ok = await asyncio.to_thread(warmup)
+        if not ok:
+            return
+    except Exception:
+        log.exception("YOLO warmup failed — Sentinel ingest/ANPR continues without boxes")
+        return
     idx = 0
     while True:
         try:

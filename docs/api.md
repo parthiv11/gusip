@@ -16,7 +16,11 @@ All console endpoints except `/health`, `/api/v1/meta`, `/api/v1/auth/token`, an
 | GET | `/api/v1/feeds/sentinel/{id}/preview?token=` |
 | GET | `/api/v1/feeds/anpr-report?fmt=json\|csv` |
 
-Upstream: `https://live.sentinelgujarat.in` (`/api/cameras`, `/stream/{id}`).
+Upstream: `https://live.sentinelgujarat.in` → catalogue **`GET /api/ingest`** (fallback `/api/cameras`).
+
+- Inference / ANPR: `rtsp://<host>:8554/stream/<id>` with `rtsp_transport=tcp` (HLS if 8554 is blocked).
+- Control-room wall: HLS `/live/stream/<id>/index.m3u8`, then HTTP `/stream/<id>` as browser fallback only.
+- Do not `curl`/`wget` `/stream/<id>` as a file. Integrator guide: https://sentinel.gujarat.gov.in/resource
 
 
 ## Auth

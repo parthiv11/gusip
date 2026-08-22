@@ -1,4 +1,9 @@
-"""Official Gujarat Police evaluation feed adapter — live.sentinelgujarat.in."""
+"""Official Sentinel sandbox adapter.
+
+Contract: https://sentinel.gujarat.gov.in/resource
+Catalogue is /api/ingest. Inference uses RTSP over TCP. The HTTP /stream/<id>
+range endpoint is a browser fallback only — never the ANPR/YOLO path.
+"""
 
 from __future__ import annotations
 
@@ -10,12 +15,14 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
 import httpx
 from geoalchemy2.elements import WKTElement
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -28,25 +35,148 @@ from app.workers.sentinel_geo import geocode
 log = logging.getLogger("gusip.sentinel")
 settings = get_settings()
 PREVIEW_DIR = DATA_DIR / "previews"
+_rtsp_blocked = False
+SENTINEL_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)",
+    "Accept": "application/json, */*",
+    "Referer": "https://sentinel.gujarat.gov.in/resource",
+}
 
 
 def _abs(url: str | None) -> str | None:
     if not url:
         return None
-    if url.startswith("http"):
+    if url.startswith("http") or url.startswith("rtsp://"):
         return url
     return f"{settings.sentinel_base_url.rstrip('/')}{url}"
 
 
+def _camera_list(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    if isinstance(payload, dict):
+        for key in ("cameras", "data", "feeds"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [x for x in rows if isinstance(x, dict)]
+    return []
+
+
+def _is_live(item: dict[str, Any]) -> bool:
+    if item.get("live") is True:
+        return True
+    if item.get("live") is False:
+        return False
+    return str(item.get("status") or "").lower() in {"live", "online", "processing"}
+
+
+def normalize_camera(item: dict[str, Any], base_url: str | None = None) -> dict[str, Any]:
+    """Map /api/ingest (or /api/cameras) into one shape. Catalogue is the contract."""
+    base = (base_url or settings.sentinel_base_url).rstrip("/")
+    sid = str(item.get("id") or item.get("number") or "")
+    host = urlparse(base).hostname or "live.sentinelgujarat.in"
+    hls = item.get("hls_live_url") or item.get("hls_url")
+    whep = item.get("webrtc_url") or item.get("whep_url")
+    rtsp = item.get("rtsp_url")
+    if not rtsp and sid:
+        rtsp = f"rtsp://{host}:8554/stream/{sid}"
+    live = _is_live(item)
+
+    def abs_http(url: str | None) -> str | None:
+        if not url:
+            return None
+        if url.startswith("http") or url.startswith("rtsp://"):
+            return url
+        return f"{base}{url}"
+
+    return {
+        "id": sid,
+        "name": item.get("name") or f"Sentinel {sid}",
+        "location": item.get("location") or item.get("name") or f"SEN-{sid}",
+        "codec": item.get("codec") or "",
+        "live": live,
+        "width": int(item.get("width") or 0),
+        "height": int(item.get("height") or 0),
+        "fps": float(item.get("fps") or 0),
+        "bitrate_kbps": item.get("bitrate_kbps") or 0,
+        "rtsp_url": rtsp,
+        "whep_url": abs_http(whep),
+        "hls_url": abs_http(hls),
+        "stream_url": abs_http(f"/stream/{sid}") if sid else None,
+        "container": item.get("container"),
+        "status": "live" if live else str(item.get("status") or "offline"),
+    }
+
+
+def inference_urls(extra: dict[str, Any] | None) -> list[str]:
+    """RTSP first (AI path). HLS if port 8554 is blocked. Never HTTP /stream."""
+    extra = extra or {}
+    urls: list[str] = []
+    for key in ("rtsp_url", "hls_url"):
+        u = extra.get(key)
+        if isinstance(u, str) and u and u not in urls:
+            urls.append(u)
+    return urls
+
+
+def inference_url(extra: dict[str, Any] | None) -> str | None:
+    urls = inference_urls(extra)
+    return urls[0] if urls else None
+
+
+def grab_cmd(url: str, ffmpeg: str = "ffmpeg") -> list[str]:
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error"]
+    if url.startswith("rtsp://"):
+        cmd += ["-rtsp_transport", "tcp", "-timeout", "3000000"]
+    else:
+        # Cloudflare 403s HLS without a browser UA (integrator HLS path on :443).
+        cmd += [
+            "-rw_timeout",
+            "8000000",
+            "-user_agent",
+            "Mozilla/5.0 GUSIP-ANPR",
+            "-headers",
+            "Referer: https://live.sentinelgujarat.in/\r\n",
+        ]
+    cmd += [
+        "-i",
+        url,
+        "-frames:v",
+        "1",
+        "-an",
+        "-c:v",
+        "mjpeg",
+        "-vf",
+        "scale=1280:-2",
+        "-q:v",
+        "3",
+        "-f",
+        "image2",
+        "pipe:1",
+    ]
+    return cmd
+
+
 async def fetch_catalog() -> list[dict[str, Any]]:
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        r = await client.get(f"{settings.sentinel_base_url.rstrip('/')}/api/cameras")
-        r.raise_for_status()
-        return list(r.json().get("cameras") or [])
+    base = settings.sentinel_base_url.rstrip("/")
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=SENTINEL_HEADERS) as client:
+        for path in ("/api/ingest", "/api/cameras"):
+            try:
+                r = await client.get(f"{base}{path}")
+                if r.status_code >= 400:
+                    log.warning("catalogue %s -> %s", path, r.status_code)
+                    continue
+                cams = _camera_list(r.json())
+                if cams:
+                    log.info("sentinel catalogue %s n=%s", path, len(cams))
+                    return [normalize_camera(c, str(r.url).rsplit(path, 1)[0] or base) for c in cams]
+            except Exception:
+                log.exception("catalogue %s failed", path)
+    return []
 
 
 async def fetch_state(cam_id: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True, headers=SENTINEL_HEADERS) as client:
         r = await client.get(f"{settings.sentinel_base_url.rstrip('/')}/api/cameras/{cam_id}/state")
         r.raise_for_status()
         return r.json()
@@ -68,27 +198,33 @@ async def sync_catalog() -> int:
         dept = await ensure_department(db)
         existing = {
             c.code: c
-            for c in (
-                await db.execute(select(Camera).where(Camera.source_type == "sentinel"))
-            ).scalars()
+            for c in (await db.execute(select(Camera).where(Camera.source_type == "sentinel"))).scalars()
         }
         seen: set[str] = set()
         for item in cams:
-            sid = str(item.get("id"))
+            sid = str(item.get("id") or "")
+            if not sid:
+                continue
             code = f"SEN-{sid}"
             seen.add(code)
             loc = item.get("location") or item.get("name") or code
             lat, lon, city = geocode(loc)
-            status = "online" if item.get("status") == "live" else "offline"
+            status = "online" if item.get("live") else "offline"
             extra = {
                 "sentinel_id": sid,
-                "stream_url": _abs(f"/stream/{sid}"),
-                "hls_url": _abs(item.get("hls_url")) if item.get("hls_url") else None,
+                "rtsp_url": item.get("rtsp_url"),
+                "whep_url": item.get("whep_url"),
+                "hls_url": item.get("hls_url"),
+                "stream_url": item.get("stream_url"),
                 "codec": item.get("codec"),
+                "width": item.get("width"),
+                "height": item.get("height"),
+                "fps": item.get("fps"),
+                "bitrate_kbps": item.get("bitrate_kbps"),
                 "container": item.get("container"),
-                "delivery": item.get("delivery"),
                 "official_location": loc,
                 "portal": settings.sentinel_base_url,
+                "catalogue": "api/ingest",
             }
             cam = existing.get(code)
             if cam:
@@ -101,8 +237,6 @@ async def sync_catalog() -> int:
                 cam.location = WKTElement(f"POINT({lon} {lat})", srid=4326)
                 cam.last_seen_at = datetime.now(timezone.utc)
                 cam.extra = {**(cam.extra or {}), **extra}
-                from sqlalchemy.orm.attributes import flag_modified
-
                 flag_modified(cam, "extra")
                 cam.is_active = True
             else:
@@ -111,14 +245,14 @@ async def sync_catalog() -> int:
                         code=code,
                         name=item.get("name") or f"Sentinel {sid}",
                         department_id=dept.id,
-                        camera_type="ip" if item.get("container") != "avi" else "analog",
+                        camera_type="ip",
                         ownership="Gujarat Police / SCRB evaluation",
                         source_type="sentinel",
                         vendor="Sentinel live-feed simulator",
                         vendor_api_ref=f"sentinel:{sid}",
                         status=status,
                         connectivity="evaluation-portal",
-                        storage_details="Source remains on live.sentinelgujarat.in (not centralised)",
+                        storage_details="Source remains on Sentinel (not centralised)",
                         amc_status="evaluation",
                         coverage_radius_m=80,
                         location=WKTElement(f"POINT({lon} {lat})", srid=4326),
@@ -139,42 +273,96 @@ async def sync_catalog() -> int:
     return len(cams)
 
 
-def grab_frame(stream_url: str, offset: float | None) -> bytes | None:
+def _playlist_refs(body: str, base: str) -> list[str]:
+    parent = urlsplit(base)
+    parent_q = dict(parse_qsl(parent.query))
+    refs: list[str] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        child = urlsplit(urljoin(base, line))
+        q = {**parent_q, **dict(parse_qsl(child.query))}
+        refs.append(urlunsplit((child.scheme, child.netloc, child.path, urlencode(q), child.fragment)))
+    return refs
+
+
+def fetch_hls_segment(url: str) -> bytes | None:
+    """Follow Cloudflare cookieCheck, then pull the latest media segment."""
+    headers = {**SENTINEL_HEADERS, "Accept": "*/*"}
+    with httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as client:
+        r = client.get(url)
+        if r.status_code >= 400 or not r.text.lstrip().startswith("#EXTM3U"):
+            log.warning("hls playlist %s -> %s", url, r.status_code)
+            return None
+        ck = client.cookies.get("cookieCheck")
+        sess = client.cookies.get("hlsSession")
+        if not sess:
+            log.warning("hls missing session cookie %s", url)
+            return None
+        cookie_hdr = f"cookieCheck={ck}; hlsSession={sess}"
+        body = r.text
+        current = str(r.url)
+        for _ in range(4):
+            refs = _playlist_refs(body, current)
+            if not refs:
+                return None
+            r = client.get(refs[-1], headers={"Cookie": cookie_hdr})
+            if r.status_code >= 400:
+                log.warning("hls media %s -> %s", refs[-1], r.status_code)
+                return None
+            current = str(r.url)
+            ctype = (r.headers.get("content-type") or "").lower()
+            if "mpegurl" in ctype or r.text.lstrip().startswith("#EXTM3U"):
+                body = r.text
+                continue
+            return r.content
+    return None
+
+
+def grab_frame(url: str, offset: float | None = None) -> bytes | None:
+    # offset is ignored: live RTP has no seeking (integrator guide §1 / §3).
+    global _rtsp_blocked
+    _ = offset
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         log.warning("ffmpeg not installed — cannot sample Sentinel frames")
         return None
-    ss = max(0.0, float(offset or 0))
-    cmd = [
-        ffmpeg,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-user_agent",
-        "GUSIP-Sentinel-Adapter/1.0",
-        "-ss",
-        f"{ss:.3f}",
-        "-i",
-        stream_url,
-        "-frames:v",
-        "1",
-        "-vf",
-        "scale=1280:-2",
-        "-q:v",
-        "3",
-        "-f",
-        "image2",
-        "pipe:1",
-    ]
+    if url.startswith("rtsp://") and _rtsp_blocked:
+        return None
+    tmp_path: str | None = None
+    src = url
+    if url.startswith("http"):
+        segment = fetch_hls_segment(url)
+        if not segment:
+            return None
+        tmp = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
+        tmp.write(segment)
+        tmp.close()
+        tmp_path = tmp.name
+        src = tmp_path
+    cmd = grab_cmd(src, ffmpeg)
     try:
-        proc = subprocess.run(cmd, capture_output=True, timeout=25)
+        proc = subprocess.run(cmd, capture_output=True, timeout=20)
     except subprocess.TimeoutExpired:
-        log.warning("ffmpeg timeout %s", stream_url)
+        log.warning("ffmpeg timeout %s", url)
+        if url.startswith("rtsp://"):
+            _rtsp_blocked = True
         return None
-    if proc.returncode != 0 or not proc.stdout:
-        log.debug("ffmpeg failed: %s", proc.stderr[-300:] if proc.stderr else "")
-        return None
-    return proc.stdout
+    finally:
+        if tmp_path:
+            Path(tmp_path).unlink(missing_ok=True)
+    err = (proc.stderr or b"").decode("utf-8", "replace")
+    if "Error constructing the frame RPS" in err or "Could not find ref with POC" in err:
+        log.info("decoder warming on join (expected until IDR) %s", url)
+    if proc.stdout and proc.stdout[:2] == b"\xff\xd8":
+        return proc.stdout
+    if url.startswith("rtsp://") and ("Connection timed out" in err or "Connection refused" in err):
+        _rtsp_blocked = True
+        log.info("RTSP :8554 unreachable from this host — ANPR will use HLS")
+    if proc.returncode != 0:
+        log.warning("ffmpeg failed %s: %s", url, err[-400:])
+    return None
 
 
 def ocr_image(jpeg: bytes) -> str:
@@ -205,21 +393,20 @@ def ocr_image(jpeg: bytes) -> str:
 
 
 async def sample_camera(cam: Camera) -> int:
-    sid = str((cam.extra or {}).get("sentinel_id") or "")
-    if not sid:
-        return 0
-    try:
-        state = await fetch_state(sid)
-    except Exception:
-        log.exception("state fetch failed %s", cam.code)
-        return 0
-    stream = _abs(state.get("stream_url") or f"/stream/{sid}")
-    if not stream:
-        return 0
-    offset = state.get("slot_offset") or state.get("offset") or 0
-    jpeg = await asyncio.to_thread(grab_frame, stream, offset)
+    extra = dict(cam.extra or {})
+    sid = str(extra.get("sentinel_id") or "")
+    urls = inference_urls(extra)
+    if not sid or not urls:
+        return -1
+    jpeg = None
+    url = urls[0]
+    for candidate in urls:
+        jpeg = await asyncio.to_thread(grab_frame, candidate)
+        if jpeg:
+            url = candidate
+            break
     if not jpeg:
-        return 0
+        return -1
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
     (PREVIEW_DIR / f"{cam.code}.jpg").write_bytes(jpeg)
     try:
@@ -242,13 +429,12 @@ async def sample_camera(cam: Camera) -> int:
         extra = dict(fresh.extra or {})
         extra["last_ocr"] = text[:400]
         extra["last_sample_at"] = datetime.now(timezone.utc).isoformat()
+        extra["last_grab_url"] = url
         extra["preview_url"] = f"/api/v1/feeds/sentinel/{sid}/preview"
         fresh.extra = extra
-        from sqlalchemy.orm.attributes import flag_modified
-
         flag_modified(fresh, "extra")
         fresh.last_seen_at = datetime.now(timezone.utc)
-        fresh.status = "online" if state.get("status") == "live" else "offline"
+        fresh.status = "online"
         await db.commit()
 
         if not plates:
@@ -279,7 +465,8 @@ async def sample_camera(cam: Camera) -> int:
                         "source_type": "sentinel",
                         "official_location": extra.get("official_location"),
                         "ocr": text[:200],
-                        "container": extra.get("container"),
+                        "grab": "rtsp" if str(url).startswith("rtsp://") else "hls",
+                        "codec": extra.get("codec"),
                     },
                 },
             )
@@ -299,7 +486,10 @@ async def sync_loop() -> None:
 
 async def anpr_loop() -> None:
     idx = 0
+    fail_streak = 0
     while True:
+        grabbed = False
+        had_cams = False
         try:
             async with SessionLocal() as db:
                 cams = list(
@@ -314,10 +504,27 @@ async def anpr_loop() -> None:
                     ).scalars()
                 )
             if cams:
+                had_cams = True
                 cam = cams[idx % len(cams)]
                 idx += 1
                 n = await sample_camera(cam)
-                log.info("sampled %s plates=%s (%s/%s)", cam.code, n, (idx % len(cams)) or len(cams), len(cams))
+                grabbed = n >= 0
+                log.info(
+                    "sampled %s plates=%s (%s/%s)",
+                    cam.code,
+                    max(n, 0),
+                    (idx % len(cams)) or len(cams),
+                    len(cams),
+                )
         except Exception:
             log.exception("sentinel ANPR loop failed")
-        await asyncio.sleep(settings.sentinel_anpr_interval_s)
+        if not had_cams:
+            fail_streak = 0
+            delay = settings.sentinel_anpr_interval_s
+        elif grabbed:
+            fail_streak = 0
+            delay = settings.sentinel_anpr_interval_s
+        else:
+            fail_streak += 1
+            delay = min(30.0, 2.0 * (2 ** (fail_streak - 1)))
+        await asyncio.sleep(delay)
