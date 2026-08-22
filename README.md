@@ -41,7 +41,7 @@ The PoC is 50 departmental-style cameras plus 31 official Sentinel cameras. Eigh
 | Backend | FastAPI |
 | Database | PostgreSQL 16 + PostGIS, Redis |
 | AI models | YOLOv8 (Ultralytics hook for GPU; PoC uses the same event contract in simulate mode), Tesseract OCR (ANPR on official Sentinel frames), ByteTrack-shaped multi-camera track IDs |
-| APIs used | Gujarat Police Sentinel Live-Feed API (`live.sentinelgujarat.in` — catalog, state, stream), OpenStreetMap / Leaflet tiles (GIS, not Google Maps), GUSIP REST + WebSocket (`/api/v1`, `/ws/alerts`, `/ws/live`), RTSP / ONVIF / vendor-API adapter interfaces |
+| APIs used | Gujarat Police Sentinel ingest catalogue (`live.sentinelgujarat.in` `/api/ingest` — RTSP TCP, HLS, WHEP), OpenStreetMap / Leaflet tiles (GIS, not Google Maps), GUSIP REST + WebSocket (`/api/v1`, `/ws/alerts`, `/ws/live`), RTSP / ONVIF / vendor-API adapter interfaces |
 | Cloud platform | On-premise (Docker Compose PoC; Kubernetes manifests in-repo; MinIO as S3-compatible object store) |
 | Programming languages | Python, TypeScript, SQL, JavaScript |
 | Frameworks | FastAPI, React 18, SQLAlchemy, GeoAlchemy2, Leaflet / react-leaflet, Tailwind CSS, Ultralytics YOLO (optional GPU path) |
@@ -82,7 +82,7 @@ GUSIP onboarded the official wall at [live.sentinelgujarat.in](https://live.sent
 
 1. Open the control room → **Gov feeds**
 2. Click **Sync Sentinel** (worker also syncs every 2 minutes)
-3. Select a camera — live progressive stream plays through the GUSIP adapter (`/api/v1/feeds/sentinel/{id}/stream`)
+3. Select a camera — HLS plays when the catalogue gives `/live/stream/<id>/index.m3u8`; HTTP `/stream/<id>` is the browser fallback only. ANPR/YOLO grab RTSP over TCP (`rtsp://…:8554/stream/<id>`).
 4. Add the jury-issued plate on **Watchlist**
 5. Wait for sequential ANPR sampling (ffmpeg + Tesseract, one camera at a time)
 6. Download **Investigate → ANPR report (CSV)** for the submission output report

@@ -72,10 +72,13 @@ class SentinelAdapter:
 
     async def pull_metadata(self, camera: dict[str, Any]) -> dict[str, Any]:
         return {
-            "protocol": "sentinel_eval_api",
+            "protocol": "sentinel_ingest",
             "portal": "https://live.sentinelgujarat.in",
-            "ref": camera.get("vendor_api_ref"),
-            "note": "Official Gujarat Police Innovation Challenge evaluation feeds (progressive MP4/AVI/MKV).",
+            "catalogue": "/api/ingest",
+            "rtsp": "rtsp://<host>:8554/stream/<id> over TCP",
+            "hls": "/live/stream/<id>/index.m3u8",
+            "whep": ":8889/stream/<id>/whep",
+            "note": "Official grid. Inference = RTSP TCP. Wall = HLS, HTTP /stream is browser fallback only.",
         }
 
 

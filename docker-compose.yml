@@ -95,6 +95,7 @@ services:
         condition: service_healthy
     volumes:
       - evidence_data:/app/data
+      - ./backend:/app
     restart: on-failure
     command: >
       sh -c "python wait_for_db.py && python -m app.seed &&
@@ -133,6 +134,7 @@ services:
         condition: service_healthy
     volumes:
       - evidence_data:/app/data
+      - ./backend:/app
     restart: on-failure
     command: python -m app.workers.main
     networks: [gusip]
