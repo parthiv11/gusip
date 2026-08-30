@@ -1,75 +1,87 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import GujaratMap from "../components/GujaratMap";
+import GISSidebar, { CoverageGapItem } from "../components/GISSidebar";
 import type { Alert, Camera } from "../types";
 
-interface Gap {
-  city: string;
-  camera_count: number;
-  uncovered_hint: string;
-  recommended_cameras: number;
-}
+const DEFAULT_DEPARTMENTS = [
+  { id: "1", name: "Traffic Management" },
+  { id: "2", name: "Crime Branch" },
+  { id: "3", name: "Highway Patrol" },
+  { id: "4", name: "Law & Order" },
+  { id: "5", name: "Gandhinagar Police" },
+  { id: "6", name: "Coastal Police" },
+  { id: "7", name: "Anti-Terrorism Squad" },
+];
 
 export default function MapPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [gaps, setGaps] = useState<Gap[]>([]);
-  const [status, setStatus] = useState("");
-  const [dept, setDept] = useState("");
-  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
+  const [departments, setDepartments] = useState<{ id: string | number; name: string }[]>(DEFAULT_DEPARTMENTS);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [selectedCity, setSelectedCity] = useState<CoverageGapItem | null>(null);
 
   useEffect(() => {
-    api<{ id: number; name: string }[]>("/api/v1/cameras/departments").then(setDepartments);
-    api<Gap[]>("/api/v1/gis/gaps").then(setGaps);
-    api<Alert[]>("/api/v1/alerts?status=new&limit=80").then(setAlerts);
+    // Attempt to load live backend data if connected
+    api<{ id: number; name: string }[]>("/api/v1/cameras/departments")
+      .then((data) => {
+        if (data && data.length) {
+          setDepartments(data);
+        }
+      })
+      .catch(() => {
+        // Fallback to default department list
+      });
+
+    api<Alert[]>("/api/v1/alerts?status=new&limit=80")
+      .then((data) => {
+        if (data && data.length) {
+          setAlerts(data);
+        }
+      })
+      .catch(() => {
+        // Fallback alerts are rendered by GujaratMap
+      });
+
+    api<Camera[]>("/api/v1/cameras")
+      .then((data) => {
+        if (data && data.length) {
+          setCameras(data);
+        }
+      })
+      .catch(() => {
+        // Fallback cameras are rendered by GujaratMap
+      });
   }, []);
 
-  useEffect(() => {
-    const q = new URLSearchParams();
-    if (status) q.set("status", status);
-    if (dept) q.set("department_id", dept);
-    api<Camera[]>(`/api/v1/cameras?${q.toString()}`).then(setCameras);
-  }, [status, dept]);
+  const handleSelectCity = (city: CoverageGapItem) => {
+    setSelectedCity(city);
+  };
 
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden">
-      <div className="lg:col-span-9 min-h-[50vh] lg:min-h-0">
-        <GujaratMap cameras={cameras} showCoverage alerts={alerts} />
+    <div className="h-full w-full flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[#0B0D10]">
+      {/* Left 78-80%: Dominant GIS Surveillance Map */}
+      <div className="flex-1 h-full min-h-0 relative">
+        <GujaratMap
+          cameras={cameras}
+          alerts={alerts}
+          statusFilter={statusFilter}
+          deptFilter={deptFilter}
+          targetCity={selectedCity}
+        />
       </div>
-      <div className="lg:col-span-3 border-t lg:border-t-0 lg:border-l border-white/10 p-3 overflow-auto bg-ink-900">
-        <h2 className="text-sm font-semibold text-brass-400 mb-3">Filters</h2>
-        <select className="w-full bg-ink-950 border border-white/10 rounded px-2 py-1 text-xs mb-2" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All status</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-        </select>
-        <select className="w-full bg-ink-950 border border-white/10 rounded px-2 py-1 text-xs mb-4" value={dept} onChange={(e) => setDept(e.target.value)}>
-          <option value="">All departments</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-        <h3 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Legend</h3>
-        <ul className="text-[11px] text-slate-400 space-y-1 mb-4">
-          <li><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 mr-2" />Camera online</li>
-          <li><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400 mr-2" />Camera offline</li>
-          <li><span className="inline-block w-4 h-4 rounded-full bg-yellow-400 text-ink-950 text-[9px] font-bold text-center leading-4 mr-1.5">n</span> Open alert · number = hit count · click for screenshot</li>
-        </ul>
-        <h3 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Coverage gaps</h3>
-        <ul className="space-y-2">
-          {gaps.map((g) => (
-            <li key={g.city} className="border border-white/10 rounded p-2 text-xs">
-              <div className="flex justify-between">
-                <span className="font-medium">{g.city}</span>
-                <span className="text-brass-400">+{g.recommended_cameras}</span>
-              </div>
-              <div className="text-slate-400 mt-1">{g.camera_count} cameras · {g.uncovered_hint}</div>
-            </li>
-          ))}
-        </ul>
-      </div>
+
+      {/* Right 20-22%: Fixed Operational Sidebar */}
+      <GISSidebar
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        deptFilter={deptFilter}
+        onDeptFilterChange={setDeptFilter}
+        departments={departments}
+        onSelectCity={handleSelectCity}
+        selectedCityName={selectedCity?.city}
+      />
     </div>
   );
 }
