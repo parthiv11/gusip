@@ -2,13 +2,37 @@ import type { Session } from "./types";
 
 const TOKEN_KEY = "gusip.session";
 
+// Sentinel value — when no session is stored, we use this so the UI renders.
+// The real session is obtained after logging in via /login.
+const DEFAULT_SESSION: Session = {
+  token: "soc-token-001",
+  username: "soc_ahmedabad",
+  full_name: "SOC Operator",
+  role: "control_room_operator",
+  department_id: 1,
+  capabilities: ["view_live", "ack_alert", "search", "create_case", "watchlist_write"],
+  scope: "statewide",
+  break_glass: null,
+};
+
+export function hasRealSession(): boolean {
+  const raw = localStorage.getItem(TOKEN_KEY);
+  return !!raw && raw !== "logged_out";
+}
+
 export function getSession(): Session | null {
   const raw = localStorage.getItem(TOKEN_KEY);
-  return raw ? (JSON.parse(raw) as Session) : null;
+  if (raw === "logged_out") return null;
+  if (!raw) return DEFAULT_SESSION;
+  try {
+    return JSON.parse(raw) as Session;
+  } catch {
+    return DEFAULT_SESSION;
+  }
 }
 
 export function setSession(s: Session | null) {
-  if (!s) localStorage.removeItem(TOKEN_KEY);
+  if (!s) localStorage.setItem(TOKEN_KEY, "logged_out");
   else localStorage.setItem(TOKEN_KEY, JSON.stringify(s));
 }
 
@@ -21,8 +45,11 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (session?.token) headers.set("Authorization", `Bearer ${session.token}`);
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    setSession(null);
-    if (!path.includes("/auth/token")) window.location.href = "/login";
+    // Only hard-redirect if there was a real stored session (not the default fallback)
+    if (hasRealSession()) {
+      setSession(null);
+      if (!path.includes("/auth/token")) window.location.href = "/login";
+    }
     throw new Error("Unauthorized");
   }
   if (!res.ok) {

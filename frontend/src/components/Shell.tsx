@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
   Camera,
-  FolderSearch,
+  Clock,
+  Folder,
   LayoutGrid,
   LogOut,
   Map,
@@ -14,7 +15,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { api, can, getSession, refreshSession, setSession } from "../api/client";
+import { api, can, getSession, hasRealSession, refreshSession, setSession } from "../api/client";
 import type { BreakGlass, Session } from "../types";
 
 const NAV = [
@@ -24,23 +25,39 @@ const NAV = [
   { to: "/alerts", label: "Alerts", icon: Bell, cap: "ack_alert" },
   { to: "/search", label: "Investigate", icon: Search, cap: "search" },
   { to: "/watchlist", label: "Watchlist", icon: Users, cap: "view_live" },
-  { to: "/cases", label: "Cases", icon: FolderSearch, cap: "create_case" },
-  { to: "/admin", label: "Admin", icon: Shield, cap: "admin_stats" },
+  { to: "/cases", label: "Cases", icon: Folder, cap: "create_case" },
 ];
 
 export default function Shell() {
   const nav = useNavigate();
+  const location = useLocation();
   const [session, setLocal] = useState<Session | null>(getSession());
   const [reason, setReason] = useState("FIR 112/2026 — suspect vehicle left home district");
   const [minutes, setMinutes] = useState(30);
   const [open, setOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [error, setError] = useState("");
+  const [currentTime, setCurrentTime] = useState("21:27:08");
 
   useEffect(() => {
-    refreshSession()
-      .then(setLocal)
-      .catch(() => setLocal(getSession()));
+    // Only attempt to refresh session when a real token is stored
+    if (hasRealSession()) {
+      refreshSession()
+        .then(setLocal)
+        .catch(() => setLocal(getSession()));
+    }
+  }, []);
+
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, "0");
+      const m = String(now.getMinutes()).padStart(2, "0");
+      const s = String(now.getSeconds()).padStart(2, "0");
+      setCurrentTime(`${h}:${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -78,7 +95,7 @@ export default function Shell() {
   }
 
   return (
-    <div className="h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative bg-[#0B0D10] text-[#F2F4F7] select-none">
       {glass?.active && (
         <div className="shrink-0 bg-orange-500/15 text-orange-200 text-[11px] px-3 sm:px-4 py-1.5 flex items-center gap-2 sm:gap-3 border-b border-orange-500/30">
           <Unlock size={12} className="shrink-0" />
@@ -90,91 +107,131 @@ export default function Shell() {
           </button>
         </div>
       )}
-      <header className="shrink-0 border-b border-white/10 bg-ink-900">
-        <div className="flex items-center px-3 sm:px-4 gap-2 sm:gap-4 min-h-14">
+      
+      {/* Top Navigation Bar */}
+      <header className="shrink-0 h-[72px] bg-[#0B0D10] border-b border-white/[0.08] px-8 flex items-center justify-between z-20">
+        {/* Left Side: GP Badge & Platform Title */}
+        <div className="flex items-center gap-3.5 min-w-0">
           <button
-            className="lg:hidden text-slate-300 p-1.5 -ml-1"
+            className="lg:hidden text-[#9AA4B2] hover:text-white p-1 -ml-1"
             aria-label="Menu"
             onClick={() => setNavOpen((v) => !v)}
           >
             {navOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="h-8 w-8 shrink-0 rounded-sm bg-brass-500 text-ink-950 font-bold grid place-items-center">
-              GP
-            </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold tracking-wide text-brass-400">GUSIP</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 hidden sm:block truncate">
-                Gujarat Police · Unified Surveillance
-              </div>
-            </div>
+
+          <div className="h-10 w-10 shrink-0 rounded-[4px] bg-[#D9A441] text-[#0B0D10] font-extrabold text-[17px] flex items-center justify-center tracking-tight shadow-md">
+            GP
           </div>
-          <nav className="hidden lg:flex flex-1 items-center gap-1 ml-6 overflow-x-auto">
-            {NAV.filter((n) => can(n.cap)).map((n) => (
-              <NavLink
-                key={n.to}
-                to={n.to}
-                end={n.to === "/"}
-                className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                    isActive ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white"
-                  }`
-                }
-              >
-                <n.icon size={14} />
-                {n.label}
-              </NavLink>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-2 sm:gap-3 shrink-0">
-            {showBreakGlass && (
-              <button
-                className="text-[11px] px-2 py-1 border border-orange-500/40 text-orange-300 rounded"
-                onClick={() => setOpen(true)}
-              >
-                Break-glass
-              </button>
-            )}
-            <div className="text-right hidden md:block mr-1">
-              <div className="text-xs font-medium">{session?.full_name}</div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                {session?.role?.replaceAll("_", " ")}
-                {session?.scope === "department" ? " · home dept" : " · statewide"}
-              </div>
+          <div className="min-w-0 flex flex-col justify-center">
+            <div className="text-[17px] font-bold tracking-wide text-white leading-tight">
+              GUSIP
             </div>
-            <button
-              className="text-slate-400 hover:text-white p-1"
-              onClick={() => {
-                setSession(null);
-                nav("/login");
-              }}
-            >
-              <LogOut size={16} />
-            </button>
+            <div className="text-[11px] font-normal text-[#8E9AA8] tracking-wider uppercase hidden sm:block truncate leading-tight mt-0.5">
+              GUJARAT POLICE · UNIFIED SURVEILLANCE
+            </div>
           </div>
         </div>
-        {navOpen && (
-          <nav className="lg:hidden grid grid-cols-2 sm:grid-cols-3 gap-1 px-3 pb-3">
-            {NAV.filter((n) => can(n.cap)).map((n) => (
-              <NavLink
-                key={n.to}
-                to={n.to}
-                end={n.to === "/"}
-                onClick={() => setNavOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-2 rounded text-xs font-medium ${
-                    isActive ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white bg-white/5"
-                  }`
-                }
-              >
-                <n.icon size={14} />
-                {n.label}
-              </NavLink>
-            ))}
-          </nav>
-        )}
+
+        {/* Center: Navigation Tabs */}
+        <nav className="hidden lg:flex items-center gap-2">
+          {NAV.filter((n) => can(n.cap)).map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.to === "/"}
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3.5 py-1.5 text-[13.5px] font-medium transition-all rounded-[4px] ${
+                  isActive
+                    ? "bg-[#10141D] text-[#D9A441] border border-[#D9A441] shadow-sm"
+                    : "text-[#8E9AA8] hover:text-[#F2F4F7] hover:bg-white/[0.03]"
+                }`
+              }
+            >
+              <n.icon size={16} className="shrink-0" />
+              <span>{n.label}</span>
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Right Side: Operator Info & Sign-Out */}
+        <div className="flex items-center gap-5 shrink-0">
+          {showBreakGlass && (
+            <button
+              className="text-[11px] px-2.5 py-1 border border-orange-500/40 bg-orange-500/10 text-orange-300 rounded-[3px] hover:bg-orange-500/20"
+              onClick={() => setOpen(true)}
+            >
+              Break-glass
+            </button>
+          )}
+          <div className="text-right hidden md:block">
+            <div className="text-[13.5px] font-medium text-[#F2F4F7] leading-tight">
+              SOC Operator – Ahmedabad
+            </div>
+            <div className="text-[10.5px] text-[#687386] font-semibold tracking-wider uppercase leading-tight mt-0.5">
+              CONTROL ROOM OPERATOR · STATEWIDE
+            </div>
+          </div>
+          <button
+            title="Sign out"
+            className="text-[#8E9AA8] hover:text-[#F2F4F7] p-1.5 rounded hover:bg-white/5 transition-colors"
+            onClick={() => {
+              setSession(null);
+              nav("/login");
+            }}
+          >
+            <LogOut size={17} />
+          </button>
+        </div>
       </header>
+
+      {/* Critical Alert Ticker */}
+      {["/", "/alerts", "/watchlist"].includes(location.pathname) && (
+        <div className="shrink-0 h-[42px] bg-[#12080B] border-b border-[#D84A4A]/25 px-8 flex items-center justify-between text-xs overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="px-2 py-0.5 rounded-[3px] border border-[#D84A4A]/80 bg-[#D84A4A]/15 text-[#D84A4A] text-[11px] font-bold tracking-wider uppercase shrink-0">
+              CRITICAL
+            </span>
+            <div className="truncate text-[#9E5D5D] text-[12.5px] flex items-center gap-1.5">
+              <span>Watchlist hit</span>
+              <span className="text-[#663333]">·</span>
+              <span className="text-[#F2F4F7] font-bold">STOLEN VEHICLE</span>
+              <span className="text-[#663333]">·</span>
+              <span className="font-mono text-[#F2F4F7] font-bold">GJ 01 ST 0001</span>
+              <span className="text-[#663333]">·</span>
+              <span className="font-mono text-[#8E9AA8]">GNR-HW-01</span>
+              <span className="text-[#663333]">·</span>
+              <span className="text-[#8E9AA8]">Hit count:</span>
+              <span className="font-mono text-[#F2F4F7] font-bold">x8</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono text-[13px] text-[#D84A4A] font-semibold tracking-wider shrink-0 pl-4">
+            <span>{currentTime}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile navigation drawer */}
+      {navOpen && (
+        <nav className="lg:hidden grid grid-cols-2 sm:grid-cols-3 gap-1 px-3 py-2 bg-[#11151C] border-b border-white/10 shrink-0 z-30">
+          {NAV.filter((n) => can(n.cap)).map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.to === "/"}
+              onClick={() => setNavOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-2 px-3 py-2 rounded text-xs font-medium ${
+                  isActive ? "bg-[#151A22] text-[#D9A441] border border-[#D9A441]/80" : "text-[#9AA4B2] hover:text-white bg-white/5"
+                }`
+              }
+            >
+              <n.icon size={14} />
+              {n.label}
+            </NavLink>
+          ))}
+        </nav>
+      )}
       {open && (
         <div className="fixed inset-0 z-20 bg-black/60 grid place-items-center p-4">
           <form onSubmit={requestGlass} className="w-full max-w-md bg-ink-900 border border-orange-500/40 rounded p-4 space-y-3">

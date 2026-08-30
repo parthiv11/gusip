@@ -2,39 +2,328 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-html, body { overflow-x: hidden; }
-.leaflet-container { background: #0a0f1c; font-family: inherit; }
-.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #101827; color: #e2e8f0; }
-.leaflet-popup-content img { width: 100%; max-height: 140px; object-fit: cover; border-radius: 4px; margin-top: 6px; }
-.gusip-alert-pin {
-  width: 26px;
-  height: 26px;
-  border-radius: 99px;
-  background: #facc15;
-  color: #111827;
-  font-weight: 800;
-  font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  display: grid;
-  place-items: center;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 4px #facc1559;
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #0B0D10;
+  color: #F2F4F7;
+  overflow: hidden;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
-.gusip-alert-pin span { line-height: 1; }
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #080C14;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(217, 164, 65, 0.4);
+}
+
+/* Leaflet Container Overrides */
+.leaflet-container {
+  background: #0B0D10 !important;
+  font-family: inherit;
+  outline: none;
+}
+
+/* Leaflet Tile Layer deep dark tone */
+.dark-gis-tiles {
+  filter: brightness(0.92) contrast(1.15) saturate(0.85);
+}
+
+/* Leaflet Popups */
+.leaflet-popup-content-wrapper {
+  background: #10151D !important;
+  color: #F2F4F7 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.5) !important;
+  padding: 2px !important;
+}
+.leaflet-popup-tip {
+  background: #10151D !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+.leaflet-popup-content {
+  margin: 10px 12px !important;
+  line-height: 1.4 !important;
+}
+
+/* Leaflet Zoom control override */
+.leaflet-control-zoom {
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 4px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+.leaflet-control-zoom a {
+  background-color: #10151D !important;
+  color: #F2F4F7 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  font-size: 15px !important;
+  transition: background-color 0.15s ease;
+}
+.leaflet-control-zoom a:hover {
+  background-color: #1a222f !important;
+  color: #D9A441 !important;
+}
+
+/* Leaflet Attribution */
+.leaflet-control-attribution {
+  background: transparent !important;
+  color: #687386 !important;
+  font-size: 11px !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+}
+.leaflet-control-attribution a {
+  color: #687386 !important;
+  text-decoration: none !important;
+}
+.leaflet-control-attribution a:hover {
+  color: #9AA4B2 !important;
+}
+
+/* Camera Online / Offline DivIcons */
+.gis-cam-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.gis-cam-marker:hover {
+  transform: scale(1.3);
+  z-index: 999 !important;
+}
+
+.cam-ring-online {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #35D49A;
+  background-color: #0B0D10;
+  box-shadow: 0 0 6px rgba(53, 212, 154, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cam-dot-online {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #35D49A;
+}
+
+.cam-ring-offline {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #F05252;
+  background-color: #0B0D10;
+  box-shadow: 0 0 6px rgba(240, 82, 82, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cam-dot-offline {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #F05252;
+}
+
+/* Alert Starburst DivIcon */
+.gis-starburst-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.gis-starburst-marker:hover {
+  transform: scale(1.18);
+  z-index: 1000 !important;
+}
+
+.starburst-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(217, 164, 65, 0.85));
+}
+
+.starburst-core {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: #D9A441;
+  border: 1.5px solid #F7E5B5;
+  box-shadow: 0 0 10px rgba(217, 164, 65, 0.9), inset 0 0 4px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: #0B0D10;
+  line-height: 1;
+  user-select: none;
+  z-index: 2;
+}
+
+/* Geographic Map Labels */
+.gis-map-label {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #9AA4B2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+.gis-region-label {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #4A5568;
+  text-transform: uppercase;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+
+.gis-water-label {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-size: 14px;
+  font-style: italic;
+  letter-spacing: 0.08em;
+  color: #3B4656;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
 
 .scanlines {
   background: repeating-linear-gradient(
     to bottom,
-    rgba(255,255,255,0.03) 0px,
-    rgba(255,255,255,0.03) 1px,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
     transparent 2px,
     transparent 4px
   );
 }
 
-@keyframes pulse-live {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
+.vignette {
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.7);
 }
-.live-dot { animation: pulse-live 1.4s ease-in-out infinite; }
+
+/* Investigation Map Markers */
+.investigation-pin-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.investigation-pin-wrapper:hover {
+  transform: scale(1.15);
+  z-index: 1000 !important;
+}
+
+.investigation-pin-body {
+  position: relative;
+  width: 28px;
+  height: 34px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.85));
+}
+
+.investigation-pin-5-body {
+  position: relative;
+  width: 38px;
+  height: 46px;
+  filter: drop-shadow(0 0 14px rgba(217, 164, 65, 0.95)) drop-shadow(0 0 4px rgba(217, 164, 65, 0.8));
+}
+
+.investigation-pin-5-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(217, 164, 65, 0.35) 0%, rgba(217, 164, 65, 0.08) 55%, transparent 75%);
+  pointer-events: none;
+}
+
+.investigation-map-label-major {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-family: "Inter", -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #7D8897;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.9);
+}
+
+.investigation-map-label-kalol {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-family: "Inter", -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #D9A441;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(0, 0, 0, 0.9);
+}
+
+.investigation-map-label-subtle {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-family: "Inter", -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #556070;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+.investigation-map-label-water {
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+  font-family: "Inter", -apple-system, sans-serif;
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.05em;
+  color: #384252;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+}
+
