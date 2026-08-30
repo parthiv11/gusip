@@ -27,7 +27,9 @@ export default function CasesPage() {
     const c = await api<CaseRow>("/api/v1/cases", { method: "POST", body: JSON.stringify({ title, description }) });
     const alerts = await api<{ id: number }[]>("/api/v1/alerts?limit=1");
     if (alerts[0]) {
-      await api(`/api/v1/cases/${c.id}/evidence?alert_id=${alerts[0].id}&notes=auto-attached%20latest%20alert`, { method: "POST" });
+      await api(`/api/v1/cases/${c.id}/evidence?alert_id=${alerts[0].id}&notes=auto-attached%20latest%20alert`, {
+        method: "POST",
+      });
     }
     load();
   }
@@ -43,23 +45,30 @@ export default function CasesPage() {
   }
 
   return (
-    <div className="h-full p-4 overflow-auto">
-      <h1 className="text-lg font-semibold mb-4">Case folders</h1>
+    <div className="h-full p-4 overflow-auto bg-[#0B0D10]">
+      <h1 className="text-lg font-semibold mb-4 text-[#F2F4F7]">Case folders</h1>
       <form onSubmit={create} className="flex flex-col sm:flex-row gap-2 mb-6">
-        <input className="flex-1 bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <button className="bg-brass-500 text-ink-950 px-4 py-2 rounded text-sm font-semibold">Create</button>
+        <input
+          className="flex-1 bg-[#11151C] border border-white/10 rounded px-3 py-2 text-sm text-[#F2F4F7]"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <button className="bg-[#D9A441] text-[#0B0D10] px-4 py-2 rounded text-sm font-semibold">Create</button>
       </form>
       <ul className="space-y-2">
         {rows.map((r) => (
-          <li key={r.id} className="border border-white/10 rounded p-3 flex flex-col sm:flex-row sm:justify-between gap-2">
+          <li
+            key={r.id}
+            className="border border-white/10 rounded-[4px] p-3 flex flex-col sm:flex-row sm:justify-between gap-2 bg-[#11151C]"
+          >
             <div>
-              <div className="font-medium">{r.title}</div>
-              <div className="text-xs text-slate-400">
+              <div className="font-medium text-[#F2F4F7]">{r.title}</div>
+              <div className="text-xs text-[#9AA4B2]">
                 {r.status} · {r.created_by} · {r.created_at}
               </div>
             </div>
             {can("export") && (
-              <button onClick={() => exp(r.id)} className="text-xs text-brass-400">
+              <button onClick={() => exp(r.id)} className="text-xs text-[#D9A441]">
                 Export JSON
               </button>
             )}

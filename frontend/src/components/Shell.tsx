@@ -14,7 +14,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { api, can, getSession, refreshSession, setSession } from "../api/client";
+import { api, can, getSession, logout, refreshSession } from "../api/client";
 import type { BreakGlass, Session } from "../types";
 
 const NAV = [
@@ -145,8 +145,8 @@ export default function Shell() {
             </div>
             <button
               className="text-slate-400 hover:text-white p-1"
-              onClick={() => {
-                setSession(null);
+              onClick={async () => {
+                await logout();
                 nav("/login");
               }}
             >

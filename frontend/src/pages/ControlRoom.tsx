@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ImageOff } from "lucide-react";
 import { api, wsUrl } from "../api/client";
 import { snapSrc } from "../api/media";
 import CameraTile from "../components/CameraTile";
 import FocusPlayer from "../components/FocusPlayer";
 import GujaratMap from "../components/GujaratMap";
+import SplitPane from "../components/SplitPane";
 import type { Alert, Camera, LiveDetection } from "../types";
 
 type Wall = "gov" | "demo" | "all";
@@ -86,6 +88,42 @@ function coalesceInbox(rows: Alert[]): Alert[] {
   return [...open.values(), ...rest].sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
 }
 
+function useDesktop() {
+  const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => setDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return desktop;
+}
+
+function SnapshotThumb({ src, alt = "" }: { src?: string; alt?: string }) {
+  const [ok, setOk] = useState(true);
+  useEffect(() => {
+    setOk(true);
+  }, [src]);
+  if (!src || !ok) {
+    return (
+      <div className="mt-2 h-20 w-full rounded border border-white/10 bg-ink-950 text-slate-500 grid place-items-center">
+        <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wide">
+          <ImageOff size={12} />
+          No still
+        </span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="mt-2 h-20 w-full object-cover rounded border border-white/10 bg-ink-950"
+      onError={() => setOk(false)}
+    />
+  );
+}
+
 export default function ControlRoom() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -104,6 +142,8 @@ export default function ControlRoom() {
   camerasRef.current = cameras;
   selectedRef.current = selected;
   wallRef.current = wall;
+
+  const desktop = useDesktop();
 
   const filtered = useMemo(() => {
     if (wall === "gov") return cameras.filter((c) => c.source_type === "sentinel");
@@ -252,126 +292,190 @@ export default function ControlRoom() {
     localStorage.setItem("gusip.alertSound", next ? "on" : "off");
   }
 
-  return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-12 gap-2 p-2 overflow-y-auto lg:overflow-hidden">
-      <section className="lg:col-span-8 flex flex-col min-h-0 gap-2">
-        {toast && (
-          <div className="px-3 py-2 rounded border border-red-500/50 bg-red-500/15 text-red-100 text-xs font-medium">
-            {toast}
-          </div>
-        )}
-        <div className="flex items-center gap-2 text-xs text-slate-400 px-1 flex-wrap">
-          <span className="text-brass-400 font-semibold">{filtered.length} on wall</span>
-          <span>{stats.online ?? "—"} online</span>
-          <span className="text-red-400">{openCount} open alerts</span>
-          {(["gov", "demo", "all"] as Wall[]).map((w) => (
-            <button
-              key={w}
-              onClick={() => {
-                setWall(w);
-                setPage(0);
-              }}
-              className={`px-2 py-0.5 rounded border ${wall === w ? "border-brass-400 text-brass-400" : "border-white/10"}`}
-            >
-              {w === "gov" ? "Gov feeds" : w === "demo" ? "Own/demo" : "All"}
-            </button>
-          ))}
-          <button className="px-2 py-0.5 border border-orange-500/40 text-orange-300 rounded" onClick={syncGov}>
-            Sync Sentinel
-          </button>
-          <button className="px-2 py-0.5 border border-white/10 rounded" onClick={toggleSound}>
-            {soundOn ? "Alert sound on" : "Alert sound off"}
-          </button>
-          {syncMsg && <span className="text-orange-300/80">{syncMsg}</span>}
-          <span className="ml-auto font-mono">
-            {page + 1}/{Math.max(1, Math.ceil(filtered.length / pageSize))}
-          </span>
-          <button className="px-2 py-0.5 border border-white/10 rounded" onClick={() => setPage((p) => Math.max(0, p - 1))}>
-            Prev
-          </button>
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const wallLabel = { gov: "Gov feeds", demo: "Own/demo", all: "All" } as const;
+
+  const toolbar = (
+    <div className="shrink-0 flex items-center gap-3 text-xs px-1 min-h-8 flex-wrap">
+      <div className="flex items-center gap-3 text-slate-300">
+        <span>
+          <span className="text-brass-400 font-semibold tabular-nums">{filtered.length}</span> on wall
+        </span>
+        <span className="text-slate-500">·</span>
+        <span>
+          <span className="tabular-nums text-emerald-300">{stats.online ?? "—"}</span> online
+        </span>
+        <span className="text-slate-500">·</span>
+        <span>
+          <span className="tabular-nums text-red-400">{openCount}</span> open alerts
+        </span>
+      </div>
+      <div className="flex rounded border border-white/10 overflow-hidden" role="tablist" aria-label="Camera wall">
+        {(["gov", "demo", "all"] as Wall[]).map((w) => (
           <button
-            className="px-2 py-0.5 border border-white/10 rounded"
-            onClick={() => setPage((p) => Math.min(Math.ceil(filtered.length / pageSize) - 1, p + 1))}
+            key={w}
+            role="tab"
+            aria-selected={wall === w}
+            onClick={() => {
+              setWall(w);
+              setPage(0);
+            }}
+            className={`px-2.5 py-1 ${
+              wall === w ? "bg-white/10 text-brass-400" : "text-slate-400 hover:text-white hover:bg-white/5"
+            }`}
           >
-            Next
+            {wallLabel[w]}
           </button>
+        ))}
+      </div>
+      <button
+        className="px-2.5 py-1 border border-white/10 text-slate-300 hover:text-white rounded"
+        onClick={syncGov}
+      >
+        Sync Sentinel
+      </button>
+      <button
+        className="px-2.5 py-1 border border-white/10 text-slate-300 hover:text-white rounded"
+        onClick={toggleSound}
+      >
+        Sound {soundOn ? "on" : "off"}
+      </button>
+      {syncMsg && <span className="text-orange-300/90 truncate max-w-[16rem]">{syncMsg}</span>}
+      <div className="ml-auto flex items-center gap-1 font-mono text-slate-400">
+        <span className="px-1">
+          {page + 1}/{pages}
+        </span>
+        <button
+          className="px-2 py-1 border border-white/10 rounded hover:text-white disabled:opacity-30"
+          disabled={page <= 0}
+          onClick={() => setPage((p) => Math.max(0, p - 1))}
+        >
+          Prev
+        </button>
+        <button
+          className="px-2 py-1 border border-white/10 rounded hover:text-white disabled:opacity-30"
+          disabled={page >= pages - 1}
+          onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+
+  const focus = selected ? (
+    <FocusPlayer camera={selected} live={live[selected.id]} alert={focusAlertRow} />
+  ) : (
+    <div className="h-full grid place-items-center text-sm text-slate-500 border border-white/10 bg-ink-900">
+      No camera selected
+    </div>
+  );
+
+  const tiles = (
+    <div className="h-full min-h-0 overflow-auto p-0.5 grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 content-start gap-2">
+      {slice.map((c) => (
+        <CameraTile key={c.id} camera={c} live={live[c.id]} selected={selected?.id === c.id} onSelect={() => setSelected(c)} />
+      ))}
+    </div>
+  );
+
+  const mapPane = (
+    <div className="h-full min-h-0 border border-white/10 overflow-hidden bg-ink-900">
+      <GujaratMap
+        cameras={filtered}
+        selectedId={selected?.id}
+        onSelect={setSelected}
+        alerts={inbox}
+        onAlertClick={(a) => focusAlert(a.camera_id, a.camera?.source_type || (a.payload?.source_type as string | undefined))}
+      />
+    </div>
+  );
+
+  const inboxPane = (
+    <aside className="h-full min-h-0 flex flex-col border border-white/10 bg-ink-900">
+      <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-brass-400">Alert inbox</h2>
+        <a className="text-[11px] text-slate-400 hover:text-brass-400" href="/search">
+          ANPR report
+        </a>
+      </div>
+      {selected && (
+        <div className="px-3 py-2 text-xs border-b border-white/10 text-slate-300">
+          Focus <span className="text-white font-medium">{selected.code}</span>
+          <span className="text-slate-500"> · {selected.address || selected.name}</span>
         </div>
-        {selected && <FocusPlayer camera={selected} live={live[selected.id]} alert={focusAlertRow} />}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2 overflow-auto min-h-0">
-          {slice.map((c) => (
-            <CameraTile key={c.id} camera={c} live={live[c.id]} selected={selected?.id === c.id} onSelect={() => setSelected(c)} />
-          ))}
+      )}
+      <div className="flex-1 overflow-auto">
+        {inbox.map((a) => {
+          const n = hitCount(a);
+          const active = selected?.id === a.camera_id;
+          return (
+            <article
+              key={a.id}
+              className={`px-3 py-3 border-b border-white/5 cursor-pointer ${
+                active ? "bg-brass-500/10" : "hover:bg-white/[0.04]"
+              }`}
+              onClick={() =>
+                focusAlert(
+                  a.camera_id,
+                  a.camera?.source_type || (a.payload?.source_type as string | undefined),
+                  undefined,
+                  { fromInbox: true }
+                )
+              }
+            >
+              <div className="flex justify-between gap-2 text-[10px] uppercase tracking-wide">
+                <span className={a.status === "new" ? "text-red-400" : "text-slate-500"}>
+                  {a.watchlist?.category?.replaceAll("_", " ")}
+                  {n > 1 ? ` · ×${n}` : ""}
+                </span>
+                <span className="font-mono text-slate-400">{new Date(a.timestamp).toLocaleTimeString("en-IN")}</span>
+              </div>
+              <div className="text-sm font-medium mt-1 text-slate-100">
+                {a.watchlist?.name}
+                {a.watchlist?.plate_number ? ` · ${a.watchlist.plate_number}` : ""}
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                {(a.payload?.camera_code as string) ?? a.camera?.code} · {Math.round(a.confidence * 100)}%
+                {n > 1 ? ` · ${n} hits` : ""}
+              </div>
+              <SnapshotThumb src={snapSrc(a.snapshot_url)} />
+              {a.status === "new" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    ack(a.id);
+                  }}
+                  className="mt-2 text-[11px] px-2.5 py-1 border border-brass-400/40 text-brass-400 rounded hover:bg-brass-500/10"
+                >
+                  Acknowledge
+                </button>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </aside>
+  );
+
+  return (
+    <div className="h-full min-h-0 flex flex-col gap-2 p-2 overflow-hidden">
+      {toast && (
+        <div className="shrink-0 px-3 py-2 rounded border border-red-500/40 bg-red-500/10 text-red-100 text-xs">
+          {toast}
         </div>
-        <div className="h-48 sm:h-40 shrink-0 border border-white/10 rounded overflow-hidden">
-          <GujaratMap
-            cameras={filtered}
-            selectedId={selected?.id}
-            onSelect={setSelected}
-            alerts={inbox}
-            onAlertClick={(a) => focusAlert(a.camera_id, a.camera?.source_type || (a.payload?.source_type as string | undefined))}
-          />
-        </div>
-      </section>
-      <aside className="lg:col-span-4 min-h-[40vh] lg:min-h-0 flex flex-col border border-white/10 rounded bg-ink-900">
-        <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-brass-400">Alert inbox</h2>
-          <a className="text-[10px] text-orange-300" href="/search">
-            ANPR report
-          </a>
-        </div>
-        {selected && (
-          <div className="px-3 py-2 text-xs border-b border-white/5 text-slate-400">
-            Focus: <span className="text-white">{selected.code}</span> · {selected.address || selected.name} · {selected.source_type}
-          </div>
-        )}
-        <div className="flex-1 overflow-auto divide-y divide-white/5">
-          {inbox.map((a) => {
-            const n = hitCount(a);
-            return (
-              <article
-                key={a.id}
-                className={`p-3 hover:bg-white/5 cursor-pointer ${selected?.id === a.camera_id ? "bg-brass-500/10" : ""}`}
-                onClick={() =>
-                  focusAlert(
-                    a.camera_id,
-                    a.camera?.source_type || (a.payload?.source_type as string | undefined),
-                    undefined,
-                    { fromInbox: true }
-                  )
-                }
-              >
-                <div className="flex justify-between text-[10px] uppercase tracking-wide">
-                  <span className={a.status === "new" ? "text-red-400" : "text-slate-500"}>
-                    {a.watchlist?.category?.replaceAll("_", " ")}
-                    {n > 1 ? ` · ×${n}` : ""}
-                  </span>
-                  <span className="font-mono text-slate-500">{new Date(a.timestamp).toLocaleTimeString("en-IN")}</span>
-                </div>
-                <div className="text-sm font-medium mt-0.5">
-                  {a.watchlist?.name} {a.watchlist?.plate_number ? `· ${a.watchlist.plate_number}` : ""}
-                </div>
-                <div className="text-xs text-slate-400">
-                  {(a.payload?.camera_code as string) ?? a.camera?.code} · {Math.round(a.confidence * 100)}% · track{" "}
-                  {(a.payload?.global_track_id as string) ?? "—"}
-                  {n > 1 ? ` · last of ${n} hits` : ""}
-                </div>
-                {a.snapshot_url && <img src={snapSrc(a.snapshot_url)} alt="" className="mt-2 w-full h-20 object-cover rounded border border-white/10" />}
-                {a.status === "new" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      ack(a.id);
-                    }}
-                    className="mt-2 text-[11px] px-2 py-1 bg-brass-500/20 text-brass-400 rounded"
-                  >
-                    Acknowledge
-                  </button>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      </aside>
+      )}
+      {toolbar}
+      <SplitPane direction="horizontal" defaultSize={74} min={52} max={86} storageKey="gusip.cr.inbox" stacked={!desktop}>
+        <SplitPane direction="vertical" defaultSize={58} min={36} max={78} storageKey="gusip.cr.focus" stacked={!desktop}>
+          {focus}
+          <SplitPane direction="horizontal" defaultSize={56} min={32} max={78} storageKey="gusip.cr.map" stacked={!desktop}>
+            {tiles}
+            {mapPane}
+          </SplitPane>
+        </SplitPane>
+        {inboxPane}
+      </SplitPane>
     </div>
   );
 }

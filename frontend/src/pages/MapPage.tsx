@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import GISSidebar, { CoverageGapItem } from "../components/GISSidebar";
 import GujaratMap from "../components/GujaratMap";
 import type { Alert, Camera } from "../types";
 
@@ -10,6 +11,14 @@ interface Gap {
   recommended_cameras: number;
 }
 
+function gapTone(current: number, target: number): CoverageGapItem["colorType"] {
+  const pct = target > 0 ? current / target : 1;
+  if (pct < 0.4) return "critical";
+  if (pct < 0.7) return "warning";
+  if (pct < 0.9) return "moderate";
+  return "good";
+}
+
 export default function MapPage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -17,6 +26,7 @@ export default function MapPage() {
   const [status, setStatus] = useState("");
   const [dept, setDept] = useState("");
   const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
 
   useEffect(() => {
     api<{ id: number; name: string }[]>("/api/v1/cameras/departments").then(setDepartments);
@@ -31,45 +41,46 @@ export default function MapPage() {
     api<Camera[]>(`/api/v1/cameras?${q.toString()}`).then(setCameras);
   }, [status, dept]);
 
+  const gapItems = useMemo<CoverageGapItem[]>(() => {
+    return gaps.map((g) => {
+      const inCity = cameras.filter((c) => c.city === g.city);
+      const lat =
+        inCity.length > 0
+          ? inCity.reduce((s, c) => s + c.latitude, 0) / inCity.length
+          : 23.02;
+      const lon =
+        inCity.length > 0
+          ? inCity.reduce((s, c) => s + c.longitude, 0) / inCity.length
+          : 72.57;
+      const target = g.camera_count + g.recommended_cameras;
+      return {
+        city: g.city,
+        current: g.camera_count,
+        target: target || g.camera_count,
+        lat,
+        lon,
+        colorType: gapTone(g.camera_count, target || 1),
+      };
+    });
+  }, [gaps, cameras]);
+
+  const mapCameras = selectedCity ? cameras.filter((c) => c.city === selectedCity) : cameras;
+
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden">
-      <div className="lg:col-span-9 min-h-[50vh] lg:min-h-0">
-        <GujaratMap cameras={cameras} showCoverage alerts={alerts} />
+    <div className="h-full flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[#0B0D10]">
+      <div className="flex-1 min-h-[50vh] lg:min-h-0">
+        <GujaratMap cameras={mapCameras} showCoverage alerts={alerts} />
       </div>
-      <div className="lg:col-span-3 border-t lg:border-t-0 lg:border-l border-white/10 p-3 overflow-auto bg-ink-900">
-        <h2 className="text-sm font-semibold text-brass-400 mb-3">Filters</h2>
-        <select className="w-full bg-ink-950 border border-white/10 rounded px-2 py-1 text-xs mb-2" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All status</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-        </select>
-        <select className="w-full bg-ink-950 border border-white/10 rounded px-2 py-1 text-xs mb-4" value={dept} onChange={(e) => setDept(e.target.value)}>
-          <option value="">All departments</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-        <h3 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Legend</h3>
-        <ul className="text-[11px] text-slate-400 space-y-1 mb-4">
-          <li><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 mr-2" />Camera online</li>
-          <li><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400 mr-2" />Camera offline</li>
-          <li><span className="inline-block w-4 h-4 rounded-full bg-yellow-400 text-ink-950 text-[9px] font-bold text-center leading-4 mr-1.5">n</span> Open alert · number = hit count · click for screenshot</li>
-        </ul>
-        <h3 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Coverage gaps</h3>
-        <ul className="space-y-2">
-          {gaps.map((g) => (
-            <li key={g.city} className="border border-white/10 rounded p-2 text-xs">
-              <div className="flex justify-between">
-                <span className="font-medium">{g.city}</span>
-                <span className="text-brass-400">+{g.recommended_cameras}</span>
-              </div>
-              <div className="text-slate-400 mt-1">{g.camera_count} cameras · {g.uncovered_hint}</div>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <GISSidebar
+        statusFilter={status || "all"}
+        onStatusFilterChange={(val) => setStatus(val === "all" ? "" : val)}
+        deptFilter={dept || "all"}
+        onDeptFilterChange={(val) => setDept(val === "all" ? "" : val)}
+        departments={departments}
+        onSelectCity={(item) => setSelectedCity((prev) => (prev === item.city ? null : item.city))}
+        selectedCityName={selectedCity}
+        gaps={gapItems}
+      />
     </div>
   );
 }
