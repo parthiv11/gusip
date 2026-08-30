@@ -16,7 +16,7 @@ export const CameraRow: React.FC<CameraRowProps> = ({
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLTableCellElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -28,10 +28,14 @@ export const CameraRow: React.FC<CameraRowProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(`rtsp://stream.gusip.gujarat.gov.in/live/${camera.code.toLowerCase()}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(camera.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
   };
 
   return (
@@ -107,7 +111,7 @@ export const CameraRow: React.FC<CameraRowProps> = ({
               className="w-full px-3 py-1.5 text-xs text-[#A8B2C1] hover:text-[#F2F4F7] hover:bg-white/[0.05] flex items-center gap-2"
             >
               {copied ? <Check size={13} className="text-[#35D58A]" /> : <Copy size={13} />}
-              <span>{copied ? "Copied stream URL" : "Copy RTSP stream"}</span>
+              <span>{copied ? "Copied camera code" : "Copy camera code"}</span>
             </button>
             <button
               onClick={() => setMenuOpen(false)}

@@ -16,22 +16,23 @@ interface PrimaryCameraFeedProps {
   camera: CameraData;
 }
 
+function formatStamp(now: Date): string {
+  const d = String(now.getDate()).padStart(2, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const y = now.getFullYear();
+  const h = String(now.getHours()).padStart(2, "0");
+  const min = String(now.getMinutes()).padStart(2, "0");
+  const s = String(now.getSeconds()).padStart(2, "0");
+  return `${d}/${m}/${y} ${h}:${min}:${s}`;
+}
+
 export const PrimaryCameraFeed: React.FC<PrimaryCameraFeedProps> = ({ camera }) => {
-  const [timestamp, setTimestamp] = useState("28/08/2026 21:27:08");
+  const [timestamp, setTimestamp] = useState(() => formatStamp(new Date()));
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      // Format 28/08/2026 HH:mm:ss
-      const day = "28";
-      const month = "08";
-      const year = "2026";
-      const h = String(now.getHours()).padStart(2, "0");
-      const m = String(now.getMinutes()).padStart(2, "0");
-      const s = String(now.getSeconds()).padStart(2, "0");
-      setTimestamp(`${day}/${month}/${year} ${h}:${m}:${s}`);
-    }, 1000);
-
+    const tick = () => setTimestamp(formatStamp(new Date()));
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, []);
 

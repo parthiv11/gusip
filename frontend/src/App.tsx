@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { getSession } from "./api/client";
+import { getSession, restoreSession } from "./api/client";
 import Shell from "./components/Shell";
 import Login from "./pages/Login";
 import ControlRoom from "./pages/ControlRoom";
@@ -13,7 +13,15 @@ import CasesPage from "./pages/CasesPage";
 import AdminPage from "./pages/AdminPage";
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  if (!getSession()) return <Navigate to="/login" replace />;
+  const [state, setState] = useState<"loading" | "authenticated" | "anonymous">(
+    getSession() ? "authenticated" : "loading",
+  );
+  useEffect(() => {
+    if (state !== "loading") return;
+    restoreSession().then((session) => setState(session ? "authenticated" : "anonymous"));
+  }, [state]);
+  if (state === "loading") return <div className="h-full grid place-items-center text-slate-400">Validating session…</div>;
+  if (state === "anonymous") return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

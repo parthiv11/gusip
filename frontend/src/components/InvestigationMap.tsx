@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -217,24 +217,39 @@ function calculateArrowPositions(points: InvestigationPoint[]) {
   return arrows;
 }
 
+function FitRoute({ points }: { points: InvestigationPoint[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points.length) return;
+    if (points.length === 1) {
+      map.setView([points[0].lat, points[0].lng], 13);
+      return;
+    }
+    map.fitBounds(
+      points.map((p) => [p.lat, p.lng] as [number, number]),
+      { padding: [48, 48], maxZoom: 13 }
+    );
+  }, [map, points]);
+  return null;
+}
+
 interface InvestigationMapProps {
+  points?: InvestigationPoint[];
   selectedEventId?: number;
   onSelectEvent?: (id: number) => void;
 }
 
 export default function InvestigationMap({
+  points = INVESTIGATION_ROUTE_POINTS,
   selectedEventId,
   onSelectEvent,
 }: InvestigationMapProps) {
   const polylineCoords = useMemo(
-    () => INVESTIGATION_ROUTE_POINTS.map((p) => [p.lat, p.lng] as [number, number]),
-    []
+    () => points.map((p) => [p.lat, p.lng] as [number, number]),
+    [points]
   );
 
-  const arrowPositions = useMemo(
-    () => calculateArrowPositions(INVESTIGATION_ROUTE_POINTS),
-    []
-  );
+  const arrowPositions = useMemo(() => calculateArrowPositions(points), [points]);
 
   return (
     <div className="relative w-full h-full bg-[#0B0D10] overflow-hidden select-none">
@@ -258,6 +273,7 @@ export default function InvestigationMap({
 
         {/* Custom Zoom Controls */}
         <CustomZoomControls />
+        <FitRoute points={points} />
 
         {/* Geographic Labels Overlay */}
         {MAP_LABELS.map((item, idx) => (
@@ -283,6 +299,8 @@ export default function InvestigationMap({
           />
         ))}
 
+        {polylineCoords.length >= 2 && (
+        <>
         {/* Investigation Route - Outer Soft Amber Glow */}
         <Polyline
           positions={polylineCoords}
@@ -329,9 +347,10 @@ export default function InvestigationMap({
             zIndexOffset={300}
           />
         ))}
+        </>
+        )}
 
-        {/* 5 Numbered Investigation Pins */}
-        {INVESTIGATION_ROUTE_POINTS.map((pt) => {
+        {points.map((pt) => {
           const isLatest = Boolean(pt.isLatest);
           const isSelected = selectedEventId === pt.id;
           return (

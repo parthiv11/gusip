@@ -14,7 +14,6 @@ export interface BreakGlass {
 }
 
 export interface Session {
-  token: string;
   username: string;
   full_name: string;
   role: Role;
@@ -74,7 +73,10 @@ export interface EventItem {
   object_type: string;
   global_track_id?: string | null;
   plate_number?: string | null;
+  plate_normalized?: string | null;
   confidence: number;
+  snapshot_url?: string | null;
+  clip_url?: string | null;
   attributes: Record<string, unknown>;
   bbox: Record<string, number>;
 }
