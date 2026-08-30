@@ -38,6 +38,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!res.ok) {
     const text = await res.text();
+    if (res.status === 502 || /<html[\s>]/i.test(text)) {
+      throw new Error("API unavailable (502). Database or backend was down — try again.");
+    }
     throw new Error(text || res.statusText);
   }
   if (res.status === 204) return undefined as T;

@@ -47,7 +47,7 @@ async def gaps(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
 ):
-    zones = await gap_analysis(db)
+    zones = await gap_analysis(db, department_id=await department_scope(user))
     await write_audit(
         db,
         user_id=user.id,
@@ -63,9 +63,9 @@ async def gaps(
 @router.get("/nearby")
 async def nearby(
     db: Annotated[AsyncSession, Depends(get_db)],
-    _user: Annotated[User, Depends(get_current_user)],
+    user: Annotated[User, Depends(get_current_user)],
     lat: float = Query(...),
     lon: float = Query(...),
     radius_m: float = 2000,
 ):
-    return await nearby_cameras(db, lon, lat, radius_m)
+    return await nearby_cameras(db, lon, lat, radius_m, department_id=await department_scope(user))

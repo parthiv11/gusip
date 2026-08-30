@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageOff } from "lucide-react";
-import { api, wsUrl } from "../api/client";
+import { api, can, wsUrl } from "../api/client";
 import { snapSrc } from "../api/media";
 import CameraTile from "../components/CameraTile";
 import FocusPlayer from "../components/FocusPlayer";
@@ -131,17 +131,15 @@ export default function ControlRoom() {
   const [selected, setSelected] = useState<Camera | null>(null);
   const [page, setPage] = useState(0);
   const [stats, setStats] = useState<Record<string, number>>({});
-  const [wall, setWall] = useState<Wall>("gov");
+  const [wall, setWall] = useState<Wall>("demo");
   const [syncMsg, setSyncMsg] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
   const [soundOn, setSoundOn] = useState(() => localStorage.getItem("gusip.alertSound") !== "off");
   const camerasRef = useRef<Camera[]>([]);
   const selectedRef = useRef<Camera | null>(null);
-  const wallRef = useRef<Wall>("gov");
   camerasRef.current = cameras;
   selectedRef.current = selected;
-  wallRef.current = wall;
 
   const desktop = useDesktop();
 
@@ -153,6 +151,7 @@ export default function ControlRoom() {
 
   const inbox = useMemo(() => coalesceInbox(alerts), [alerts]);
   const openCount = inbox.filter((a) => a.status === "new").length;
+  const onlineCount = stats.online ?? cameras.filter((c) => c.status === "online").length;
   const focusAlertRow = inbox.find((a) => a.status === "new" && a.camera_id === selected?.id) ?? null;
 
   const pageSize = 8;
@@ -172,7 +171,7 @@ export default function ControlRoom() {
     cameraId: number | undefined,
     sourceType?: string | null,
     banner?: string,
-    opts?: { fromInbox?: boolean }
+    _opts?: { fromInbox?: boolean }
   ) {
     if (banner) {
       setToast(banner);
@@ -185,14 +184,11 @@ export default function ControlRoom() {
       return;
     }
     const src = sourceType || cam.source_type;
-    const onGov = wallRef.current === "gov";
     setWall((current) => {
       if (current === "all") return current;
       if (src === "sentinel") return "gov";
-      if (current === "gov" && !opts?.fromInbox) return current;
       return "demo";
     });
-    if (onGov && src !== "sentinel" && !opts?.fromInbox) return;
     setSelected(cam);
     setFocusId(cam.id);
   }
@@ -206,7 +202,11 @@ export default function ControlRoom() {
   useEffect(() => {
     loadCameras();
     api<Alert[]>("/api/v1/alerts?limit=80").then((rows) => setAlerts(coalesceInbox(rows)));
-    api<Record<string, number>>("/api/v1/admin/stats").then((s) => setStats(s));
+    if (can("admin_stats")) {
+      api<Record<string, number>>("/api/v1/admin/stats")
+        .then((s) => setStats(s))
+        .catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -303,7 +303,7 @@ export default function ControlRoom() {
         </span>
         <span className="text-slate-500">·</span>
         <span>
-          <span className="tabular-nums text-emerald-300">{stats.online ?? "—"}</span> online
+          <span className="tabular-nums text-emerald-300">{onlineCount}</span> online
         </span>
         <span className="text-slate-500">·</span>
         <span>
@@ -328,12 +328,14 @@ export default function ControlRoom() {
           </button>
         ))}
       </div>
-      <button
-        className="px-2.5 py-1 border border-white/10 text-slate-300 hover:text-white rounded"
-        onClick={syncGov}
-      >
-        Sync Sentinel
-      </button>
+      {can("onboard_camera") && (
+        <button
+          className="px-2.5 py-1 border border-white/10 text-slate-300 hover:text-white rounded"
+          onClick={syncGov}
+        >
+          Sync Sentinel
+        </button>
+      )}
       <button
         className="px-2.5 py-1 border border-white/10 text-slate-300 hover:text-white rounded"
         onClick={toggleSound}
@@ -373,9 +375,17 @@ export default function ControlRoom() {
 
   const tiles = (
     <div className="h-full min-h-0 overflow-auto p-0.5 grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 content-start gap-2">
-      {slice.map((c) => (
-        <CameraTile key={c.id} camera={c} live={live[c.id]} selected={selected?.id === c.id} onSelect={() => setSelected(c)} />
-      ))}
+      {slice.length === 0 ? (
+        <div className="col-span-full m-3 rounded border border-white/10 bg-ink-900 px-3 py-4 text-xs text-slate-400">
+          {wall === "gov"
+            ? "Government Sentinel feeds sit in a separate evaluation department. Break-glass (investigator) or sign in as admin to put them on this wall."
+            : "No cameras in this view."}
+        </div>
+      ) : (
+        slice.map((c) => (
+          <CameraTile key={c.id} camera={c} live={live[c.id]} selected={selected?.id === c.id} onSelect={() => setSelected(c)} />
+        ))
+      )}
     </div>
   );
 
@@ -396,7 +406,7 @@ export default function ControlRoom() {
       <div className="px-3 py-2 border-b border-white/10 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-brass-400">Alert inbox</h2>
         <a className="text-[11px] text-slate-400 hover:text-brass-400" href="/search">
-          ANPR report
+          Investigate
         </a>
       </div>
       {selected && (

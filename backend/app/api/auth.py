@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
+import base64
+import hashlib
+import secrets
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,15 +18,18 @@ from app.core.policy import PURPOSES, capabilities_for, has_capability
 from app.core.security import (
     client_ip,
     create_access_token,
+    decode_access_token,
     get_current_user,
     hash_password,
     verify_password,
 )
 from app.db import get_db
+from app.config import get_settings
 from app.models.user import User
 from app.schemas.common import BreakGlassOut, BreakGlassRequest, SessionOut, Token, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
 
 
 def _scope_label(scoped_to: int | None) -> str:
@@ -40,6 +49,27 @@ def _break_glass_out(grant: dict | None) -> BreakGlassOut | None:
     )
 
 
+def _set_session_cookies(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        max_age=settings.access_token_expire_minutes * 60,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="strict",
+        path="/",
+    )
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=secrets.token_urlsafe(32),
+        max_age=settings.access_token_expire_minutes * 60,
+        httponly=False,
+        secure=settings.session_cookie_secure,
+        samesite="strict",
+        path="/",
+    )
+
+
 async def session_fields(user: User) -> dict:
     scoped = await department_scope(user)
     grant = await get_grant(user.id)
@@ -54,9 +84,12 @@ async def session_fields(user: User) -> dict:
 @router.post("/token", response_model=Token)
 async def login(
     request: Request,
+    response: Response,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if not settings.local_auth_enabled:
+        raise HTTPException(status_code=404, detail="Local authentication is disabled")
     result = await db.execute(select(User).where(User.username == form.username))
     user = result.scalar_one_or_none()
     if not user or not verify_password(form.password, user.hashed_password) or not user.is_active:
@@ -72,15 +105,128 @@ async def login(
         department_id=user.department_id,
     )
     await db.commit()
+    _set_session_cookies(response, token)
     extra = await session_fields(user)
     return Token(
-        access_token=token,
+        access_token="" if settings.app_env.lower() in {"production", "prod"} else token,
         role=user.role,
         username=user.username,
         full_name=user.full_name,
         department_id=user.department_id,
         capabilities=extra["capabilities"],
         scope=extra["scope"],
+    )
+
+
+@router.get("/oidc/login")
+async def oidc_login():
+    if settings.auth_provider != "oidc":
+        raise HTTPException(404, "OIDC authentication is not enabled")
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    params = urlencode(
+        {
+            "client_id": settings.oidc_client_id,
+            "response_type": "code",
+            "scope": "openid profile email",
+            "redirect_uri": settings.oidc_redirect_uri,
+            "state": state,
+            "nonce": nonce,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    response = RedirectResponse(f"{settings.oidc_authorization_url}?{params}", status_code=302)
+    for name, value in {
+        "gusip_oidc_state": state,
+        "gusip_oidc_nonce": nonce,
+        "gusip_oidc_verifier": verifier,
+    }.items():
+        response.set_cookie(
+            name,
+            value,
+            max_age=300,
+            httponly=True,
+            secure=settings.session_cookie_secure,
+            samesite="lax",
+            path="/api/v1/auth/oidc",
+        )
+    return response
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(
+    request: Request,
+    code: str,
+    state: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if settings.auth_provider != "oidc" or not secrets.compare_digest(
+        state,
+        request.cookies.get("gusip_oidc_state", ""),
+    ):
+        raise HTTPException(401, "Invalid OIDC state")
+    verifier = request.cookies.get("gusip_oidc_verifier")
+    nonce = request.cookies.get("gusip_oidc_nonce")
+    if not verifier or not nonce:
+        raise HTTPException(401, "Expired OIDC transaction")
+    form = {
+        "grant_type": "authorization_code",
+        "client_id": settings.oidc_client_id,
+        "redirect_uri": settings.oidc_redirect_uri,
+        "code": code,
+        "code_verifier": verifier,
+    }
+    if settings.oidc_client_secret:
+        form["client_secret"] = settings.oidc_client_secret
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        token_response = await client.post(settings.oidc_token_url, data=form)
+        token_response.raise_for_status()
+        tokens = token_response.json()
+    access_token = tokens.get("access_token")
+    id_token = tokens.get("id_token")
+    if not isinstance(access_token, str) or not isinstance(id_token, str):
+        raise HTTPException(502, "OIDC provider returned an incomplete token response")
+    claims = await decode_access_token(id_token)
+    if not secrets.compare_digest(str(claims.get("nonce") or ""), nonce):
+        raise HTTPException(401, "Invalid OIDC nonce")
+    username = claims.get(settings.oidc_username_claim)
+    user = await db.scalar(select(User).where(User.username == username, User.is_active.is_(True)))
+    if user is None:
+        raise HTTPException(403, "OIDC identity is not provisioned for GUSIP")
+    await write_audit(
+        db,
+        user_id=user.id,
+        username=user.username,
+        action="oidc_login",
+        resource="auth",
+        ip_address=client_ip(request),
+        department_id=user.department_id,
+    )
+    await db.commit()
+    response = RedirectResponse("/", status_code=302)
+    _set_session_cookies(response, access_token)
+    for name in ("gusip_oidc_state", "gusip_oidc_nonce", "gusip_oidc_verifier"):
+        response.delete_cookie(name, path="/api/v1/auth/oidc")
+    return response
+
+
+@router.post("/logout", status_code=204)
+async def logout(response: Response):
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+    response.delete_cookie(
+        key=settings.csrf_cookie_name,
+        path="/",
+        secure=settings.session_cookie_secure,
+        samesite="strict",
     )
 
 

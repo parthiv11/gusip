@@ -79,6 +79,9 @@ export default function Login() {
           coordinator / GUSIP@coord2026
           <br />
           admin / GUSIP@admin2026
+          <p className="mt-2 font-sans text-slate-500 leading-4">
+            Operator, investigator, and coordinator are home-department scoped. Investigator can break-glass for a statewide trail. Admin is statewide.
+          </p>
         </div>}
       </form>
     </div>

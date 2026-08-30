@@ -3,27 +3,93 @@ kind: Deployment
 metadata:
   name: backend
   namespace: gusip
+  labels:
+    app: backend
+    app.kubernetes.io/part-of: gusip
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels: { app: backend }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   template:
     metadata:
-      labels: { app: backend }
+      labels: { app: backend, app.kubernetes.io/part-of: gusip }
     spec:
+      serviceAccountName: gusip
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      priorityClassName: gusip-critical
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: backend } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector: { matchLabels: { app: backend } }
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: backend
-          image: gusip-backend:poc
+          image: gusip-backend:prod
+          imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef: { name: gusip-config }
           env:
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef: { name: gusip-secrets, key: SECRET_KEY }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: DATABASE_URL }
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: ENCRYPTION_KEY }
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_ACCESS_KEY }
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_SECRET_KEY }
+            - name: ADAPTER_KEYS_JSON
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: ADAPTER_KEYS_JSON }
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: OIDC_CLIENT_SECRET }
+            - name: INFERENCE_MODE
+              value: simulate
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+            failureThreshold: 24
           readinessProbe:
-            httpGet: { path: /health, port: 8000 }
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 15
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 ---
 apiVersion: v1
 kind: Service
@@ -33,24 +99,52 @@ metadata:
 spec:
   selector: { app: backend }
   ports:
-    - port: 8000
+    - name: http
+      port: 8000
+      targetPort: http
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker
   namespace: gusip
+  labels:
+    app: worker
+    app.kubernetes.io/part-of: gusip
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels: { app: worker }
   template:
     metadata:
-      labels: { app: worker }
+      labels: { app: worker, app.kubernetes.io/part-of: gusip }
     spec:
+      serviceAccountName: gusip
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      priorityClassName: gusip-bulk
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: worker } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              podAffinityTerm:
+                labelSelector: { matchLabels: { app: worker } }
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: worker
-          image: gusip-backend:poc
+          image: gusip-backend:prod
+          imagePullPolicy: IfNotPresent
           command: ["python", "-m", "app.workers.main"]
           envFrom:
             - configMapRef: { name: gusip-config }
@@ -58,25 +152,98 @@ spec:
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef: { name: gusip-secrets, key: SECRET_KEY }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: DATABASE_URL }
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: ENCRYPTION_KEY }
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_ACCESS_KEY }
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_SECRET_KEY }
+            - name: INFERENCE_MODE
+              value: yolo
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { cpu: "4", memory: 8Gi }
+          startupProbe:
+            exec:
+              command: ["test", "-f", "/tmp/gusip-worker-heartbeat"]
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import os,time; assert time.time()-os.path.getmtime('/tmp/gusip-worker-heartbeat') < 60"
+            periodSeconds: 20
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
   namespace: gusip
+  labels:
+    app: frontend
+    app.kubernetes.io/part-of: gusip
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels: { app: frontend }
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   template:
     metadata:
-      labels: { app: frontend }
+      labels: { app: frontend, app.kubernetes.io/part-of: gusip }
     spec:
+      serviceAccountName: gusip
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      priorityClassName: gusip-critical
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: frontend } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector: { matchLabels: { app: frontend } }
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: frontend
-          image: gusip-frontend:poc
+          image: gusip-frontend:prod
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 8080
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile: { type: RuntimeDefault }
 ---
 apiVersion: v1
 kind: Service
@@ -84,25 +251,8 @@ metadata:
   name: frontend
   namespace: gusip
 spec:
-  type: ClusterIP
   selector: { app: frontend }
   ports:
-    - port: 80
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: gusip
-  namespace: gusip
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-spec:
-  rules:
-    - host: gusip.local
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service: { name: frontend, port: { number: 80 } }
+    - name: http
+      port: 80
+      targetPort: http

@@ -52,6 +52,46 @@ def _apply_dept_scope(q, scoped_to: int | None):
     return q.join(Camera, Camera.id == DetectionEvent.camera_id).where(Camera.department_id == scoped_to)
 
 
+def _decorate_track_points(points) -> list[TrackPointOut]:
+    raw: list[TrackPointOut] = []
+    for p in points:
+        item = TrackPointOut.model_validate(p)
+        if p.camera:
+            item.camera_code = p.camera.code
+            item.camera_name = p.camera.name
+            item.city = p.camera.city
+        raw.append(item)
+    if not raw:
+        return []
+    dwells: list[TrackPointOut] = []
+    for item in raw:
+        if dwells and dwells[-1].camera_id == item.camera_id:
+            prev = dwells[-1]
+            dwells[-1] = item.model_copy(
+                update={
+                    "hits": prev.hits + 1,
+                    "first_seen": prev.first_seen or prev.timestamp,
+                }
+            )
+        else:
+            dwells.append(item.model_copy(update={"hits": 1, "first_seen": item.timestamp}))
+    by_cam: dict[int, TrackPointOut] = {}
+    order: list[int] = []
+    for hop in dwells:
+        prev = by_cam.get(hop.camera_id)
+        if prev is None:
+            order.append(hop.camera_id)
+            by_cam[hop.camera_id] = hop
+            continue
+        by_cam[hop.camera_id] = hop.model_copy(
+            update={
+                "hits": prev.hits + hop.hits,
+                "first_seen": prev.first_seen or prev.timestamp,
+            }
+        )
+    return [by_cam[cid] for cid in order]
+
+
 @router.post("/events", response_model=list[EventOut])
 async def search_events(
     body: SearchQuery,
@@ -114,14 +154,7 @@ async def track_history(
     points = list((await db.execute(q)).scalars())
     if scoped_to is not None:
         points = [p for p in points if p.camera and p.camera.department_id == scoped_to]
-    out = []
-    for p in points:
-        item = TrackPointOut.model_validate(p)
-        if p.camera:
-            item.camera_code = p.camera.code
-            item.camera_name = p.camera.name
-            item.city = p.camera.city
-        out.append(item)
+    out = _decorate_track_points(points)
     await _audit_search(
         db,
         user,
@@ -154,14 +187,7 @@ async def plate_route(
     points = list((await db.execute(q)).scalars())
     if scoped_to is not None:
         points = [p for p in points if p.camera and p.camera.department_id == scoped_to]
-    out = []
-    for p in points:
-        item = TrackPointOut.model_validate(p)
-        if p.camera:
-            item.camera_code = p.camera.code
-            item.camera_name = p.camera.name
-            item.city = p.camera.city
-        out.append(item)
+    out = _decorate_track_points(points)
     await _audit_search(
         db,
         user,
@@ -188,15 +214,7 @@ async def _track_points(
     points = list((await db.execute(q)).scalars())
     if scoped_to is not None:
         points = [p for p in points if p.camera and p.camera.department_id == scoped_to]
-    out: list[TrackPointOut] = []
-    for p in points:
-        item = TrackPointOut.model_validate(p)
-        if p.camera:
-            item.camera_code = p.camera.code
-            item.camera_name = p.camera.name
-            item.city = p.camera.city
-        out.append(item)
-    return out
+    return _decorate_track_points(points)
 
 
 @router.post("/face", response_model=FaceSearchOut)

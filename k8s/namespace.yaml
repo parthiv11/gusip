@@ -2,17 +2,80 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: gusip
+  labels:
+    app.kubernetes.io/part-of: gusip
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# City / state intelligence cluster envelope (not the 80k-GPU farm).
+# GPU farm is a separate namespace + overlay: k8s/gpu-worker.yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: gusip-quota
+  namespace: gusip
+spec:
+  hard:
+    pods: "80"
+    persistentvolumeclaims: "12"
+    requests.cpu: "48"
+    requests.memory: 96Gi
+    requests.storage: 2Ti
+    limits.cpu: "96"
+    limits.memory: 192Gi
+    services.loadbalancers: "2"
+    count/deployments.apps: "20"
+    count/statefulsets.apps: "8"
 ---
 apiVersion: v1
-kind: Secret
+kind: LimitRange
 metadata:
-  name: gusip-secrets
+  name: gusip-defaults
   namespace: gusip
-type: Opaque
-stringData:
-  SECRET_KEY: change-me-in-production-use-openssl-rand-hex-32
-  POSTGRES_PASSWORD: gusip
-  MINIO_SECRET: gusipsecret
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      default:
+        cpu: "1"
+        memory: 512Mi
+      min:
+        cpu: 50m
+        memory: 32Mi
+      max:
+        cpu: "16"
+        memory: 32Gi
+    - type: PersistentVolumeClaim
+      min:
+        storage: 1Gi
+      max:
+        storage: 2Ti
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: gusip-critical
+value: 100000
+globalDefault: false
+description: Watchlist API, Postgres, Redis — do not preempt
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: gusip-bulk
+value: 1000
+globalDefault: false
+description: ANPR/YOLO workers — preemptible under cluster pressure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gusip
+  namespace: gusip
+automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -20,7 +83,30 @@ metadata:
   name: gusip-config
   namespace: gusip
 data:
-  DATABASE_URL: postgresql+asyncpg://gusip:gusip@postgres:5432/gusip
+  APP_ENV: production
+  SESSION_COOKIE_SECURE: "true"
+  LOCAL_AUTH_ENABLED: "false"
+  AUTH_PROVIDER: oidc
+  OIDC_ISSUER: https://id.gusip.example.in/realms/gusip
+  OIDC_AUDIENCE: gusip
+  OIDC_JWKS_URL: https://id.gusip.example.in/realms/gusip/protocol/openid-connect/certs
+  OIDC_AUTHORIZATION_URL: https://id.gusip.example.in/realms/gusip/protocol/openid-connect/auth
+  OIDC_TOKEN_URL: https://id.gusip.example.in/realms/gusip/protocol/openid-connect/token
+  OIDC_CLIENT_ID: gusip
+  OIDC_REDIRECT_URI: https://gusip.example.in/api/v1/auth/oidc/callback
   REDIS_URL: redis://redis:6379/0
-  SIMULATION_ENABLED: "true"
-  INFERENCE_MODE: simulate
+  MINIO_ENDPOINT: minio:9000
+  MINIO_BUCKET: gusip-evidence
+  MINIO_SECURE: "false"
+  CORS_ORIGINS: https://gusip.example.in
+  SIMULATION_ENABLED: "false"
+  INFERENCE_MODE: yolo
+  USE_KAFKA: "false"
+  AUDIT_ENABLED: "true"
+  SENTINEL_BASE_URL: https://live.corp8.cloud
+  SENTINEL_ENABLED: "true"
+  SENTINEL_ANPR_ENABLED: "true"
+  SENTINEL_ANPR_INTERVAL_S: "8"
+  SENTINEL_RTSP_ENABLED: "true"
+  SENTINEL_ALLOWED_HOSTS: live.sentinelgujarat.in,live.corp8.cloud
+  OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp

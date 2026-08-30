@@ -18,6 +18,7 @@ class WatchlistEntry(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    face_embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     appearance_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra: Mapped[dict] = mapped_column(JSONB, default=dict)
     face_embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select, text
+import math
+
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.camera import Camera, Department
 from app.schemas.common import GapZone
 
 # Approximate urban cores used for coverage gap heuristics (PoC).
+# Tuple is (lat, lon, recommended cameras in the 12 km urban core).
 CITY_CENTROIDS = {
     "Ahmedabad": (23.0225, 72.5714, 12),
     "Surat": (21.1702, 72.8311, 10),
@@ -19,6 +22,48 @@ CITY_CENTROIDS = {
     "Bharuch": (21.7051, 72.9959, 3),
     "Anand": (22.5645, 72.9289, 3),
 }
+
+CORE_RADIUS_M = 12_000
+
+
+def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    radius = 6_371_000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlamb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlamb / 2) ** 2
+    return 2 * radius * math.asin(min(1.0, math.sqrt(a)))
+
+
+def city_coverage_gap(
+    city: str,
+    lat: float,
+    lon: float,
+    recommended: int,
+    cameras: list[tuple[float, float]],
+) -> GapZone:
+    nearby = [(clat, clon) for clat, clon in cameras if haversine_m(lat, lon, clat, clon) <= CORE_RADIUS_M]
+    n = len(nearby)
+    deficit = max(0, recommended - n)
+    if n == 0:
+        hint = "No federated cameras in this urban core"
+        rec = recommended
+    else:
+        mean_m = sum(haversine_m(lat, lon, clat, clon) for clat, clon in nearby) / n
+        clustered = n >= 2 and mean_m < 2_500
+        if clustered and deficit == 0:
+            hint = f"{n} cameras clustered within {int(mean_m)} m of the core; arterial / outskirts still dark"
+            rec = max(2, recommended // 2)
+        elif clustered:
+            hint = f"{n} cameras bunched downtown vs urban requirement of {recommended}+; next buy should be an arterial road"
+            rec = deficit
+        elif deficit == 0:
+            hint = f"{n} cameras cover the core; keep one spare for outskirts"
+            rec = 1
+        else:
+            hint = f"{n} cameras inside 12 km vs indicative urban requirement of {recommended}+"
+            rec = deficit
+    return GapZone(city=city, camera_count=n, uncovered_hint=hint, recommended_cameras=rec)
 
 
 async def cameras_geojson(db: AsyncSession, department_id: int | None = None, status: str | None = None):
@@ -54,41 +99,39 @@ async def cameras_geojson(db: AsyncSession, department_id: int | None = None, st
     return {"type": "FeatureCollection", "features": features}
 
 
-async def gap_analysis(db: AsyncSession) -> list[GapZone]:
-    counts = (
-        await db.execute(
-            select(Camera.city, func.count(Camera.id)).where(Camera.is_active.is_(True)).group_by(Camera.city)
-        )
-    ).all()
-    by_city = {c: n for c, n in counts}
-    zones: list[GapZone] = []
-    for city, (_lat, _lon, recommended) in CITY_CENTROIDS.items():
-        n = by_city.get(city, 0)
-        deficit = max(0, recommended - n)
-        if deficit == 0 and n < recommended + 2:
-            hint = "Core covered; arterial / outskirts still sparse"
-            rec = 2
-        elif n == 0:
-            hint = "No federated cameras in this urban core"
-            rec = recommended
-        else:
-            hint = f"{n} cameras vs indicative urban requirement of {recommended}+"
-            rec = deficit or 1
-        zones.append(GapZone(city=city, camera_count=n, uncovered_hint=hint, recommended_cameras=rec))
+async def gap_analysis(db: AsyncSession, department_id: int | None = None) -> list[GapZone]:
+    q = select(Camera.latitude, Camera.longitude).where(Camera.is_active.is_(True))
+    if department_id is not None:
+        q = q.where(Camera.department_id == department_id)
+    cameras = [(float(lat), float(lon)) for lat, lon in (await db.execute(q)).all() if lat is not None and lon is not None]
+    zones = [
+        city_coverage_gap(city, lat, lon, recommended, cameras)
+        for city, (lat, lon, recommended) in CITY_CENTROIDS.items()
+    ]
     return sorted(zones, key=lambda z: z.recommended_cameras, reverse=True)
 
 
-async def nearby_cameras(db: AsyncSession, lon: float, lat: float, radius_m: float = 2000):
+async def nearby_cameras(
+    db: AsyncSession,
+    lon: float,
+    lat: float,
+    radius_m: float = 2000,
+    department_id: int | None = None,
+):
     sql = text(
         """
         SELECT id, code, name, city, status,
                ST_Distance(location, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography) AS dist_m
         FROM cameras
         WHERE is_active
+          AND (:department_id IS NULL OR department_id = :department_id)
           AND ST_DWithin(location, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, :radius)
         ORDER BY dist_m ASC
         LIMIT 25
         """
     )
-    result = await db.execute(sql, {"lon": lon, "lat": lat, "radius": radius_m})
+    result = await db.execute(
+        sql,
+        {"lon": lon, "lat": lat, "radius": radius_m, "department_id": department_id},
+    )
     return [dict(r._mapping) for r in result]

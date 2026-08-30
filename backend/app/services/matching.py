@@ -94,6 +94,7 @@ def _ws_payload(alert: Alert, entry: WatchlistEntry, camera: Camera, *, coalesce
     return {
         "id": alert.id,
         "camera_id": camera.id,
+        "department_id": camera.department_id,
         "camera_code": camera.code,
         "camera_name": camera.name,
         "city": camera.city,
@@ -134,6 +135,8 @@ async def _bump_open_alert(
     extra["coalesced"] = True
     extra["source_type"] = camera.source_type
     extra["fingerprint"] = alert_fingerprint(entry.id, camera.id)
+    extra["match_score"] = confidence
+    extra["match_kind"] = "face" if entry.entity_type == "person" else "plate"
     open_row.payload = extra
     flag_modified(open_row, "payload")
     open_row.confidence = max(open_row.confidence, confidence)
@@ -208,6 +211,8 @@ async def maybe_raise_alert(
             "source_type": camera.source_type,
             "hit_count": 1,
             "fingerprint": alert_fingerprint(entry.id, camera.id),
+            "match_score": confidence,
+            "match_kind": "face" if entry.entity_type == "person" else "plate",
         },
     )
     try:

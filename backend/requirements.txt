@@ -19,6 +19,7 @@ numpy==2.1.1
 shapely==2.0.6
 pytesseract==0.3.13
 ultralytics==8.3.70
+rapidocr==3.9.2
 onnxruntime==1.20.1
 # ArcFace is ONNX buffalo_l (SCRFD + w600k_r50), downloaded on first warmup.
 # Do not pip-install insightface on slim — it needs g++ to compile mesh cython.

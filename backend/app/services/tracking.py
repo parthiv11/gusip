@@ -1,12 +1,28 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import TypeVar
 
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.event import DetectionEvent
+
+T = TypeVar("T")
+
+
+def coalesce_consecutive_camera_hops(items: list[T], *, camera_id_of=lambda p: p.camera_id) -> list[T]:
+    """One trail hop per consecutive camera. Same-camera ANPR spam is a dwell, not a hop."""
+    if not items:
+        return []
+    hops: list[T] = [items[0]]
+    for item in items[1:]:
+        if camera_id_of(item) == camera_id_of(hops[-1]):
+            hops[-1] = item
+        else:
+            hops.append(item)
+    return hops
 
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -41,8 +57,18 @@ async def resolve_global_track(
     plate_normalized: str | None,
     embedding: list[float] | None,
     timestamp: datetime,
+    stream_epoch: int | None = None,
+    local_track_id: str | None = None,
 ) -> str:
-    """Multi-camera Re-ID: plate-first, then embedding similarity within a time window."""
+    """Multi-camera Re-ID: plate-first, then ByteTrack local ID, then embedding."""
+    if stream_epoch is not None:
+        if plate_normalized:
+            return f"veh-{plate_normalized}-c{camera_id}-e{stream_epoch}"
+        if local_track_id:
+            return f"{object_type[:3]}-{camera_id}-t{local_track_id}-e{stream_epoch}"
+        stamp = timestamp.astimezone(timezone.utc).strftime("%H%M%S")
+        return f"{object_type[:3]}-{camera_id}-e{stream_epoch}-{stamp}"
+
     window_start = timestamp - timedelta(minutes=45)
 
     if plate_normalized:
@@ -59,6 +85,9 @@ async def resolve_global_track(
         if prev and prev.global_track_id:
             return prev.global_track_id
         return f"veh-{plate_normalized}"
+
+    if local_track_id:
+        return f"{object_type[:3]}-{camera_id}-t{local_track_id}"
 
     if embedding:
         q = await db.execute(

@@ -6,6 +6,7 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import select, text
 
@@ -23,6 +24,13 @@ from app.workers.sentinel import anpr_loop, sync_loop
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("gusip.worker")
 settings = get_settings()
+HEARTBEAT_PATH = Path("/tmp/gusip-worker-heartbeat")
+
+
+async def heartbeat_loop() -> None:
+    while True:
+        HEARTBEAT_PATH.write_text(datetime.now(timezone.utc).isoformat())
+        await asyncio.sleep(10)
 
 
 async def health_loop() -> None:
@@ -65,17 +73,19 @@ async def sim_loop() -> None:
 
 
 async def main() -> None:
-    await seed()
+    if settings.app_env.lower() not in {"production", "prod"}:
+        await seed()
     async with SessionLocal() as db:
         await collapse_duplicate_open_alerts(db)
         await db.commit()
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_open_watchlist_camera "
-                "ON alerts (watchlist_id, camera_id) WHERE status = 'new'"
+    if settings.app_env.lower() not in {"production", "prod"}:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_open_watchlist_camera "
+                    "ON alerts (watchlist_id, camera_id) WHERE status = 'new'"
+                )
             )
-        )
     await bus.connect()
     if settings.face_enabled:
         from app.services.face import warmup_arcface
@@ -83,16 +93,18 @@ async def main() -> None:
         asyncio.create_task(asyncio.to_thread(warmup_arcface))
         log.info("ArcFace warmup scheduled")
     log.info("GUSIP worker started mode=%s kafka=%s sentinel=%s", settings.inference_mode, settings.use_kafka, settings.sentinel_enabled)
-    tasks = [asyncio.create_task(health_loop())]
+    tasks = [asyncio.create_task(heartbeat_loop()), asyncio.create_task(health_loop())]
     if settings.simulation_enabled:
         tasks.append(asyncio.create_task(sim_loop()))
     if settings.sentinel_enabled:
         tasks.append(asyncio.create_task(sync_loop()))
         if settings.sentinel_anpr_enabled:
             tasks.append(asyncio.create_task(anpr_loop()))
-    if inference_available():
+    if inference_available() and not (settings.sentinel_enabled and settings.sentinel_anpr_enabled):
         tasks.append(asyncio.create_task(yolo_preview_loop()))
         log.info("YOLO loop enabled")
+    elif inference_available():
+        log.info("YOLO on live Sentinel PTS samples (preview loop off)")
     else:
         log.warning("YOLO loop off (mode=%s, ultralytics missing?)", settings.inference_mode)
     await asyncio.gather(*tasks)

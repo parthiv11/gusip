@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 
 import asyncio
+import hmac
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import admin, alerts, auth, cameras, cases, evidence, feeds, gis, ingest, integrations, search, watchlist, ws
 from app.config import get_settings
@@ -17,22 +19,24 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
-        from app import models  # noqa: F401
+    from app import models  # noqa: F401
 
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(text("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS face_embedding JSONB"))
+    if settings.app_env.lower() not in {"production", "prod"}:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS face_embedding JSONB"))
     async with SessionLocal() as db:
         await collapse_duplicate_open_alerts(db)
         await db.commit()
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_open_watchlist_camera "
-                "ON alerts (watchlist_id, camera_id) WHERE status = 'new'"
+    if settings.app_env.lower() not in {"production", "prod"}:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_open_watchlist_camera "
+                    "ON alerts (watchlist_id, camera_id) WHERE status = 'new'"
+                )
             )
-        )
     await bus.connect()
     if settings.face_enabled:
         from app.services.face import warmup_arcface
@@ -51,6 +55,17 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def csrf_protection(request: Request, call_next):
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and request.cookies.get(settings.session_cookie_name):
+        cookie_token = request.cookies.get(settings.csrf_cookie_name, "")
+        header_token = request.headers.get("x-csrf-token", "")
+        if not cookie_token or not hmac.compare_digest(cookie_token, header_token):
+            return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"})
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,6 +104,8 @@ async def meta():
         "architecture": "hybrid-federation",
         "poc_cameras": 50,
         "scale_target": 80000,
+        "sentinel_enabled": settings.sentinel_enabled,
+        "auth_provider": settings.auth_provider,
         "face": _face_status(),
     }
 

@@ -201,6 +201,8 @@ class TrackPointOut(BaseModel):
     camera_code: str | None = None
     camera_name: str | None = None
     city: str | None = None
+    hits: int = 1
+    first_seen: datetime | None = None
 
     model_config = {"from_attributes": True}
 

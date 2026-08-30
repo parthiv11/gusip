@@ -88,8 +88,11 @@ export default function GujaratMap({
   return (
     <MapContainer center={[22.8, 71.8]} zoom={7} className="h-full w-full rounded" scrollWheelZoom>
       <TileLayer
+        className="dark-gis-tiles"
         attribution="&copy; OpenStreetMap"
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        subdomains="abc"
+        maxZoom={19}
       />
       <Fit cameras={cameras} alerts={openAlerts} />
       {cameras.map((c) => (

@@ -1,0 +1,81 @@
+# Optional overlay: regional GPU inference farm.
+# Requires NVIDIA device plugin + RuntimeClass nvidia.
+# Apply after the base stack: kubectl apply -f k8s/gpu-worker.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-gpu
+  namespace: gusip
+  labels:
+    app: worker
+    role: gpu
+    app.kubernetes.io/part-of: gusip
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: worker, role: gpu }
+  template:
+    metadata:
+      labels: { app: worker, role: gpu, app.kubernetes.io/part-of: gusip }
+    spec:
+      serviceAccountName: gusip
+      priorityClassName: gusip-bulk
+      runtimeClassName: nvidia
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: worker
+          image: gusip-backend:prod
+          command: ["python", "-m", "app.workers.main"]
+          envFrom:
+            - configMapRef: { name: gusip-config }
+          env:
+            - name: INFERENCE_MODE
+              value: yolo
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: SECRET_KEY }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: DATABASE_URL }
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: ENCRYPTION_KEY }
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_ACCESS_KEY }
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_SECRET_KEY }
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker-gpu
+  namespace: gusip
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker-gpu
+  minReplicas: 2
+  maxReplicas: 32
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 80 }

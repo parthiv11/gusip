@@ -1,19 +1,29 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: postgres
   namespace: gusip
+  labels:
+    app: postgres
+    app.kubernetes.io/part-of: gusip
 spec:
+  serviceName: postgres
   replicas: 1
   selector:
     matchLabels: { app: postgres }
   template:
     metadata:
-      labels: { app: postgres }
+      labels: { app: postgres, app.kubernetes.io/part-of: gusip }
     spec:
+      serviceAccountName: gusip
+      priorityClassName: gusip-critical
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        fsGroup: 999
       containers:
         - name: postgres
           image: postgis/postgis:16-3.4
+          imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER
               value: gusip
@@ -22,11 +32,38 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef: { name: gusip-secrets, key: POSTGRES_PASSWORD }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           ports:
-            - containerPort: 5432
+            - name: postgres
+              containerPort: 5432
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { cpu: "4", memory: 16Gi }
+          startupProbe:
+            exec: { command: ["pg_isready", "-U", "gusip", "-d", "gusip"] }
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "gusip"]
+            exec: { command: ["pg_isready", "-U", "gusip", "-d", "gusip"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "gusip", "-d", "gusip"] }
+            periodSeconds: 20
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 200Gi }
 ---
 apiVersion: v1
 kind: Service
@@ -34,28 +71,63 @@ metadata:
   name: postgres
   namespace: gusip
 spec:
+  clusterIP: None
   selector: { app: postgres }
   ports:
-    - port: 5432
+    - name: postgres
+      port: 5432
+      targetPort: postgres
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: redis
   namespace: gusip
+  labels:
+    app: redis
+    app.kubernetes.io/part-of: gusip
 spec:
+  serviceName: redis
   replicas: 1
   selector:
     matchLabels: { app: redis }
   template:
     metadata:
-      labels: { app: redis }
+      labels: { app: redis, app.kubernetes.io/part-of: gusip }
     spec:
+      serviceAccountName: gusip
+      priorityClassName: gusip-critical
+      securityContext:
+        fsGroup: 999
       containers:
         - name: redis
           image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes", "--maxmemory", "3gb", "--maxmemory-policy", "allkeys-lru"]
           ports:
-            - containerPort: 6379
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { cpu: "2", memory: 4Gi }
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 20Gi }
 ---
 apiVersion: v1
 kind: Service
@@ -63,6 +135,84 @@ metadata:
   name: redis
   namespace: gusip
 spec:
+  clusterIP: None
   selector: { app: redis }
   ports:
-    - port: 6379
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: gusip
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: gusip
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio, app.kubernetes.io/part-of: gusip }
+    spec:
+      serviceAccountName: gusip
+      priorityClassName: gusip-critical
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_ACCESS_KEY }
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: gusip-secrets, key: MINIO_SECRET_KEY }
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          resources:
+            requests: { cpu: "1", memory: 2Gi }
+            limits: { cpu: "4", memory: 8Gi }
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: s3 }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /minio/health/live, port: s3 }
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 500Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: gusip
+spec:
+  selector: { app: minio }
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+    - name: console
+      port: 9001
+      targetPort: console
