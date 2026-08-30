@@ -6,7 +6,9 @@ import asyncio
 
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import select, text
+from sqlalchemy.orm.attributes import flag_modified
 
+from app.config import get_settings
 from app.core.plates import normalize_plate
 from app.core.security import hash_password
 from app.db import Base, SessionLocal, engine
@@ -111,20 +113,42 @@ WATCHLIST = [
         "name": "Rakesh M.",
         "description": "Wanted in NDPS case. Frequent SG Highway / Sarkhej.",
         "appearance_notes": "grey hoodie",
-        "extra": {"sim_tag": "wanted-rakesh"},
+        "extra": {"sim_tag": "wanted-rakesh", "age": 34},
         "priority": "critical",
+    },
+    {
+        "entity_type": "person",
+        "category": "wanted_person",
+        "plate_number": None,
+        "name": "Kiran S.",
+        "description": "Wanted in robbery FIR 88/2026. Last seen Paldi / Ashram Road.",
+        "appearance_notes": "navy jacket",
+        "extra": {"sim_tag": "wanted-kiran", "age": 29},
+        "priority": "high",
+    },
+    {
+        "entity_type": "person",
+        "category": "missing_person",
+        "plate_number": None,
+        "name": "Mehta B.",
+        "description": "Adult missing-person locate. Surat Varachha. Non-criminal.",
+        "appearance_notes": "white shirt",
+        "extra": {"sim_tag": "missing-mehta", "age": 41},
+        "priority": "high",
     },
     {
         "entity_type": "person",
         "category": "missing_person",
         "plate_number": None,
         "name": "Anjali P.",
-        "description": "Missing from Vadodara Alkapuri. Age 16. Non-criminal locating only.",
+        "description": "Missing from Vadodara Alkapuri. Age 16. Non-criminal locating only. No face enroll.",
         "appearance_notes": "school bag blue",
-        "extra": {"sim_tag": "missing-anjali"},
+        "extra": {"sim_tag": "missing-anjali", "age": 16, "no_face": True},
         "priority": "high",
     },
 ]
+
+FACE_TAGS = {"wanted-rakesh", "wanted-kiran", "missing-mehta"}
 
 USERS = [
     ("admin", "GUSIP@admin2026", "Control Room Administrator", "admin@gusip.gujarat.gov.in", "system_admin", None),
@@ -135,9 +159,12 @@ USERS = [
 
 
 async def seed() -> None:
+    if get_settings().app_env.lower() in {"production", "prod"}:
+        raise RuntimeError("PoC seed data and demo accounts are forbidden in production")
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS face_embedding JSONB"))
 
     async with SessionLocal() as db:
         dept_map: dict[str, Department] = {}
@@ -196,17 +223,59 @@ async def seed() -> None:
                     )
                 )
 
-        wl_exists = (await db.execute(select(WatchlistEntry))).scalars().first()
-        if not wl_exists:
+        from app.services.face import canned_embedding
+
+        existing = list((await db.execute(select(WatchlistEntry))).scalars())
+        tags = {(row.extra or {}).get("sim_tag") for row in existing}
+        if not existing:
             for item in WATCHLIST:
+                extra = dict(item.get("extra") or {})
+                tag = extra.get("sim_tag")
+                face = canned_embedding(tag) if tag in FACE_TAGS else None
+                if face:
+                    extra["face_engine"] = "canned"
                 db.add(
                     WatchlistEntry(
-                        **item,
+                        **{**item, "extra": extra},
                         plate_normalized=normalize_plate(item["plate_number"]),
+                        face_embedding=face,
                         created_by="seed",
                         is_active=True,
                     )
                 )
+        else:
+            by_tag = {item["extra"].get("sim_tag"): item for item in WATCHLIST if item.get("extra")}
+            for tag, item in by_tag.items():
+                if tag and tag not in tags:
+                    extra = dict(item.get("extra") or {})
+                    face = canned_embedding(tag) if tag in FACE_TAGS else None
+                    if face:
+                        extra["face_engine"] = "canned"
+                    db.add(
+                        WatchlistEntry(
+                            **{**item, "extra": extra},
+                            plate_normalized=normalize_plate(item["plate_number"]),
+                            face_embedding=face,
+                            created_by="seed",
+                            is_active=True,
+                        )
+                    )
+            for row in existing:
+                extra = dict(row.extra or {})
+                tag = extra.get("sim_tag")
+                if tag == "missing-anjali":
+                    extra.setdefault("age", 16)
+                    extra["no_face"] = True
+                    row.extra = extra
+                    flag_modified(row, "extra")
+                    row.face_embedding = None
+                    continue
+                if tag in FACE_TAGS and not row.face_embedding:
+                    row.face_embedding = canned_embedding(tag)
+                    extra["face_engine"] = extra.get("face_engine") or "canned"
+                    extra.setdefault("age", 34)
+                    row.extra = extra
+                    flag_modified(row, "extra")
 
         await db.commit()
         print("GUSIP seed complete: departments, 50 cameras, users, watchlist.")

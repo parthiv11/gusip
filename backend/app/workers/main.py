@@ -77,6 +77,11 @@ async def main() -> None:
             )
         )
     await bus.connect()
+    if settings.face_enabled:
+        from app.services.face import warmup_arcface
+
+        asyncio.create_task(asyncio.to_thread(warmup_arcface))
+        log.info("ArcFace warmup scheduled")
     log.info("GUSIP worker started mode=%s kafka=%s sentinel=%s", settings.inference_mode, settings.use_kafka, settings.sentinel_enabled)
     tasks = [asyncio.create_task(health_loop())]
     if settings.simulation_enabled:

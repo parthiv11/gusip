@@ -13,6 +13,7 @@ from app.models.camera import Camera
 from app.models.event import Alert, DetectionEvent
 from app.models.watchlist import WatchlistEntry
 from app.services.event_bus import bus
+from app.services.face import MATCH_THRESHOLD, cosine_score, is_face_embedding
 from app.services.storage import generate_placeholder_snapshot, save_snapshot_png
 
 
@@ -26,7 +27,12 @@ async def load_active_watchlist(db: AsyncSession) -> list[WatchlistEntry]:
     return list(result.scalars())
 
 
-def match_entry(entry: WatchlistEntry, plate_norm: str | None, attrs: dict[str, Any]) -> tuple[bool, float]:
+def match_entry(
+    entry: WatchlistEntry,
+    plate_norm: str | None,
+    attrs: dict[str, Any],
+    embedding: list[float] | None = None,
+) -> tuple[bool, float]:
     if entry.entity_type == "vehicle" and plate_norm and entry.plate_normalized:
         if plate_norm == entry.plate_normalized:
             return True, 0.97
@@ -34,6 +40,10 @@ def match_entry(entry: WatchlistEntry, plate_norm: str | None, attrs: dict[str, 
         if len(plate_norm) >= 6 and plate_norm[-4:] == entry.plate_normalized[-4:] and plate_norm[:2] == entry.plate_normalized[:2]:
             return True, 0.78
     if entry.entity_type == "person":
+        if embedding and entry.face_embedding and is_face_embedding(embedding):
+            score = cosine_score(embedding, entry.face_embedding)
+            if score >= MATCH_THRESHOLD:
+                return True, score
         notes = (entry.appearance_notes or "").lower()
         clothing = str(attrs.get("clothing", "")).lower()
         if notes and clothing and notes in clothing:
@@ -146,7 +156,7 @@ async def maybe_raise_alert(
     plate_norm = event.plate_normalized or normalize_plate(event.plate_number)
     best: tuple[WatchlistEntry, float] | None = None
     for entry in watchlist:
-        ok, conf = match_entry(entry, plate_norm, event.attributes or {})
+        ok, conf = match_entry(entry, plate_norm, event.attributes or {}, event.embedding)
         if ok and (best is None or conf > best[1]):
             best = (entry, conf)
     if not best:

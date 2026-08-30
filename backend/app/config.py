@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     sentinel_enabled: bool = True
     sentinel_anpr_enabled: bool = True
     sentinel_anpr_interval_s: float = 10.0
+    face_enabled: bool = True
+    face_model: str = "buffalo_l"
+    face_model_root: str = "/app/data/insightface"
+    face_pack_url: str = "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+    face_min_det_score: float = 0.4
+    face_det_size: int = 640
 
     @property
     def cors_origin_list(self) -> list[str]:
