@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, can } from "../api/client";
+import type { Alert } from "../types";
 
 interface CaseRow {
   id: number;
@@ -15,6 +16,8 @@ export default function CasesPage() {
   const [title, setTitle] = useState("Stolen Fortuner — Satellite FIR 112/2026");
   const [description, setDescription] = useState("Multi-camera hops SG Highway to Gandhinagar.");
 
+  const [error, setError] = useState("");
+
   async function load() {
     setRows(await api<CaseRow[]>("/api/v1/cases"));
   }
@@ -24,14 +27,27 @@ export default function CasesPage() {
 
   async function create(e: FormEvent) {
     e.preventDefault();
-    const c = await api<CaseRow>("/api/v1/cases", { method: "POST", body: JSON.stringify({ title, description }) });
-    const alerts = await api<{ id: number }[]>("/api/v1/alerts?limit=1");
-    if (alerts[0]) {
-      await api(`/api/v1/cases/${c.id}/evidence?alert_id=${alerts[0].id}&notes=auto-attached%20latest%20alert`, {
-        method: "POST",
-      });
+    setError("");
+    try {
+      const c = await api<CaseRow>("/api/v1/cases", { method: "POST", body: JSON.stringify({ title, description }) });
+      const alerts = await api<Alert[]>("/api/v1/alerts?status=new&limit=80");
+      const compact = (s: string) => s.toUpperCase().replaceAll(" ", "");
+      const match =
+        alerts.find((a) => a.watchlist?.category === "stolen_vehicle") ||
+        alerts.find((a) => {
+          const plate = a.watchlist?.plate_number;
+          return Boolean(plate && compact(title).includes(compact(plate)));
+        }) ||
+        alerts[0];
+      if (match) {
+        await api(`/api/v1/cases/${c.id}/evidence?alert_id=${match.id}&notes=auto-attached%20watchlist%20alert`, {
+          method: "POST",
+        });
+      }
+      await load();
+    } catch (err) {
+      setError(String(err));
     }
-    load();
   }
 
   async function exp(id: number) {
@@ -47,6 +63,7 @@ export default function CasesPage() {
   return (
     <div className="h-full p-4 overflow-auto bg-[#0B0D10]">
       <h1 className="text-lg font-semibold mb-4 text-[#F2F4F7]">Case folders</h1>
+      {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
       <form onSubmit={create} className="flex flex-col sm:flex-row gap-2 mb-6">
         <input
           className="flex-1 bg-[#11151C] border border-white/10 rounded px-3 py-2 text-sm text-[#F2F4F7]"

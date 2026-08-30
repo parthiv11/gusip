@@ -263,12 +263,12 @@ export default function InvestigationMap({
         scrollWheelZoom
         className="w-full h-full"
       >
-        {/* Deep dark Carto basemap tiles */}
         <TileLayer
           className="dark-gis-tiles"
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          subdomains="abc"
           maxZoom={19}
+          attribution="&copy; OpenStreetMap"
         />
 
         {/* Custom Zoom Controls */}
@@ -369,8 +369,7 @@ export default function InvestigationMap({
 
       {/* Map Attribution at Bottom-Right */}
       <div className="absolute bottom-3 right-4 z-[1000] text-[11px] text-[#687587] select-none flex items-center gap-1.5 pointer-events-auto bg-[#080C14]/70 px-2 py-0.5 rounded border border-white/[0.04]">
-        <span className="text-[12px]">🇺🇦</span>
-        <span className="hover:text-[#9AA4B2] cursor-pointer">Leaflet</span>
+        <span>Leaflet</span>
         <span>|</span>
         <span>© OpenStreetMap</span>
       </div>

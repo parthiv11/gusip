@@ -14,6 +14,7 @@ class Case(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="open")
     created_by: Mapped[str] = mapped_column(String(64))
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     evidence = relationship("CaseEvidence", back_populates="case", cascade="all, delete-orphan")

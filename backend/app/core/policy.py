@@ -68,9 +68,9 @@ ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
     ),
 }
 
-# Home-department filter (organization attribute). SOC operator / IO / admin
-# are statewide by default; coordinators are not, unless break-glass is active.
-SCOPED_ROLES = frozenset({"department_coordinator"})
+# Every operational role is home-department scoped. Only system administrators
+# are statewide by default; approved break-glass grants temporarily lift scope.
+SCOPED_ROLES = frozenset({"control_room_operator", "investigation_officer", "department_coordinator"})
 
 
 def capabilities_for(role: str) -> list[str]:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from app.config import get_settings
+
 
 class Adapter(Protocol):
     source_type: str
@@ -73,12 +75,12 @@ class SentinelAdapter:
     async def pull_metadata(self, camera: dict[str, Any]) -> dict[str, Any]:
         return {
             "protocol": "sentinel_ingest",
-            "portal": "https://live.sentinelgujarat.in",
+            "portal": get_settings().sentinel_base_url,
             "catalogue": "/api/ingest",
-            "rtsp": "rtsp://<host>:8554/stream/<id> over TCP",
-            "hls": "/live/stream/<id>/index.m3u8",
-            "whep": ":8889/stream/<id>/whep",
-            "note": "Official grid. Inference = RTSP TCP. Wall = HLS, HTTP /stream is browser fallback only.",
+            "rtsp": "catalogue rtsp_url over TCP (OpenCV/FFmpeg/DeepStream)",
+            "hls": "catalogue hls_url when :8554 is blocked",
+            "whep": "catalogue webrtc_url — browser preview only",
+            "note": "GET /api/ingest is the contract. Consume only. PTS timing. HTTP /stream is a media-player fallback, never AI ingest.",
         }
 
 

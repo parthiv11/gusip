@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models.camera import Camera
+from app.services.byte_track import tracker_for
 from app.services.pipeline import ingest_detection
 from app.services.storage import DATA_DIR
 
@@ -47,7 +49,9 @@ def get_model() -> Any:
     if _model is None:
         from ultralytics import YOLO
 
-        _model = YOLO("yolov8n.pt")
+        model_path = Path(settings.inference_model_path)
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        _model = YOLO(str(model_path))
         log.info("YOLOv8n loaded device=cpu")
     return _model
 
@@ -60,12 +64,12 @@ def warmup() -> bool:
     return True
 
 
-def detect_frame(frame) -> list[dict[str, Any]]:
-    """Run YOLOv8n. Bboxes are scaled to 400×240 so the control-room overlay matches."""
+def detect_frame(frame, *, camera_key: str | None = None, stream_epoch: int | None = None) -> list[dict[str, Any]]:
+    """Run YOLOv8n and associate stable local IDs with a per-camera ByteTrack-style tracker."""
     if not inference_available():
         return []
     model = get_model()
-    results = model.predict(frame, classes=YOLO_CLASSES, verbose=False, device="cpu", imgsz=640)
+    results = model.predict(frame, classes=YOLO_CLASSES, verbose=False, device="cpu", imgsz=960)
     detections: list[dict[str, Any]] = []
     for r in results:
         if r.boxes is None:
@@ -80,7 +84,12 @@ def detect_frame(frame) -> list[dict[str, Any]]:
                 {
                     "object_type": mapped,
                     "confidence": float(b.conf[0]),
-                    "local_track_id": str(int(b.id[0])) if b.id is not None else None,
+                    "x1": float(xyxy[0]),
+                    "y1": float(xyxy[1]),
+                    "x2": float(xyxy[2]),
+                    "y2": float(xyxy[3]),
+                    "frame_w": w,
+                    "frame_h": h,
                     "bbox": {
                         "x": int(xyxy[0] / w * 400),
                         "y": int(xyxy[1] / h * 240),
@@ -90,15 +99,27 @@ def detect_frame(frame) -> list[dict[str, Any]]:
                     "class_name": name,
                 }
             )
+    if camera_key:
+        tracker_for(camera_key, stream_epoch).update(detections)
     return detections
 
 
-def detect_jpeg(jpeg: bytes) -> list[dict[str, Any]]:
+def detect_jpeg(
+    jpeg: bytes, *, camera_key: str | None = None, stream_epoch: int | None = None
+) -> list[dict[str, Any]]:
     img = np.array(Image.open(BytesIO(jpeg)).convert("RGB"))
-    return detect_frame(img)
+    return detect_frame(img, camera_key=camera_key, stream_epoch=stream_epoch)
 
 
-async def emit_detections(cam: Camera, dets: list[dict[str, Any]], jpeg: bytes | None = None) -> int:
+async def emit_detections(
+    cam: Camera,
+    dets: list[dict[str, Any]],
+    jpeg: bytes | None = None,
+    *,
+    timestamp: datetime | None = None,
+    stream_epoch: int | None = None,
+    stream_pts: float | None = None,
+) -> int:
     if not dets:
         return 0
     snap_url = None
@@ -119,6 +140,8 @@ async def emit_detections(cam: Camera, dets: list[dict[str, Any]], jpeg: bytes |
                 "source_type": cam.source_type,
                 "model": "yolov8n",
                 "class_name": d.get("class_name"),
+                "stream_epoch": stream_epoch,
+                "stream_pts": stream_pts,
             }
             embedding = None
             this_snap = snap_url
@@ -133,6 +156,7 @@ async def emit_detections(cam: Camera, dets: list[dict[str, Any]], jpeg: bytes |
                     "camera_id": cam.id,
                     "event_type": "detection",
                     "object_type": d["object_type"],
+                    "timestamp": timestamp,
                     "confidence": d["confidence"],
                     "local_track_id": d.get("local_track_id"),
                     "bbox": d.get("bbox") or {},
@@ -208,7 +232,7 @@ async def yolo_preview_loop() -> None:
             idx += 1
             code = path.stem
             jpeg = path.read_bytes()
-            dets = await asyncio.to_thread(detect_jpeg, jpeg)
+            dets = await asyncio.to_thread(detect_jpeg, jpeg, camera_key=code)
             async with SessionLocal() as db:
                 cam = (await db.execute(select(Camera).where(Camera.code == code))).scalar_one_or_none()
             if cam and dets:

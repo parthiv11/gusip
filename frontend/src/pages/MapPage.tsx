@@ -30,7 +30,9 @@ export default function MapPage() {
 
   useEffect(() => {
     api<{ id: number; name: string }[]>("/api/v1/cameras/departments").then(setDepartments);
-    api<Gap[]>("/api/v1/gis/gaps").then(setGaps);
+    api<Gap[]>("/api/v1/gis/gaps")
+      .then(setGaps)
+      .catch(() => setGaps([]));
     api<Alert[]>("/api/v1/alerts?status=new&limit=80").then(setAlerts);
   }, []);
 

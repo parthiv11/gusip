@@ -30,19 +30,24 @@ export default function WatchlistPage() {
 
   async function add(e: FormEvent) {
     e.preventDefault();
-    await api("/api/v1/watchlist", {
-      method: "POST",
-      body: JSON.stringify({
-        entity_type: category.includes("person") ? "person" : "vehicle",
-        category,
-        plate_number: plate || null,
-        name,
-        priority: "high",
-      }),
-    });
-    setPlate("");
-    setName("");
-    load();
+    setError("");
+    try {
+      await api("/api/v1/watchlist", {
+        method: "POST",
+        body: JSON.stringify({
+          entity_type: category.includes("person") ? "person" : "vehicle",
+          category,
+          plate_number: plate || null,
+          name,
+          priority: "high",
+        }),
+      });
+      setPlate("");
+      setName("");
+      await load();
+    } catch (err) {
+      setError(String(err));
+    }
   }
 
   return (

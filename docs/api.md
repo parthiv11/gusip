@@ -3,7 +3,7 @@
 Base URL (compose): `http://localhost:8000`  
 OpenAPI: `http://localhost:8000/docs`
 
-All console endpoints except `/health`, `/api/v1/meta`, `/api/v1/auth/token`, and `/api/v1/ingest/detection` require `Authorization: Bearer <jwt>`.
+The browser uses an `HttpOnly`, `SameSite=Strict` session cookie. Unsafe requests also require the matching `X-CSRF-Token` header. Bearer JWTs remain available only for non-browser demo/API clients. `/api/v1/ingest/detection` uses its own signed-envelope authentication.
 
 ## Sentinel government feeds
 
@@ -12,15 +12,18 @@ All console endpoints except `/health`, `/api/v1/meta`, `/api/v1/auth/token`, an
 | POST | `/api/v1/feeds/sentinel/sync` |
 | GET | `/api/v1/feeds/sentinel/catalog` |
 | GET | `/api/v1/feeds/sentinel/{id}/state` |
-| GET | `/api/v1/feeds/sentinel/{id}/stream?token=` |
-| GET | `/api/v1/feeds/sentinel/{id}/preview?token=` |
+| GET | `/api/v1/feeds/sentinel/{id}/stream` |
+| GET | `/api/v1/feeds/sentinel/{id}/preview` |
 | GET | `/api/v1/feeds/anpr-report?fmt=json\|csv` |
 
-Upstream: `https://live.sentinelgujarat.in` → catalogue **`GET /api/ingest`** (fallback `/api/cameras`).
+Upstream live portal: `https://live.corp8.cloud` (the public ingest host). Catalogue **`GET /api/ingest`** is the contract — camera IDs and URLs are not hard-coded. Integrator guide: https://sentinel.gujarat.gov.in/resource
 
-- Inference / ANPR: `rtsp://<host>:8554/stream/<id>` with `rtsp_transport=tcp` (HLS if 8554 is blocked).
-- Control-room wall: HLS `/live/stream/<id>/index.m3u8`, then HTTP `/stream/<id>` as browser fallback only.
-- Do not `curl`/`wget` `/stream/<id>` as a file. Integrator guide: https://sentinel.gujarat.gov.in/resource
+- AI / ANPR: catalogue `rtsp_url` over TCP. Primary client is OpenCV (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp`, PTS from `CAP_PROP_POS_MSEC`); FFmpeg is the fallback. HLS if `:8554` is blocked. WHEP is browser preview only.
+- Timing is PTS (`ffmpeg -copyts` / `CAP_PROP_POS_MSEC`), never reported FPS or wall-clock arrival. Inter-frame gaps are not disconnects. Loop cuts reset tracker epochs.
+- Reconnect backoff 2–30s. Join decoder RPS/POC warnings are logged, not fatal. Mixed H.264/H.265 and mixed resolutions.
+- Consume only. Do not publish to the gateway. Pace load (one live capture at a time).
+- GUSIP `/sentinel/{id}/stream` proxies upstream `/stream/{id}` as a media-player range fallback. Do not `curl`/`wget` it as a file, and do not use it for inference.
+- Browsers receive only authenticated GUSIP gateway URLs; upstream RTSP/HLS/WHEP addresses are redacted.
 
 
 ## Auth
@@ -28,6 +31,7 @@ Upstream: `https://live.sentinelgujarat.in` → catalogue **`GET /api/ingest`** 
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/api/v1/auth/token` | OAuth2 password form |
+| POST | `/api/v1/auth/logout` | Clear session and CSRF cookies |
 | GET | `/api/v1/auth/me` | Current user |
 | POST | `/api/v1/auth/users` | Admin create user |
 
@@ -109,21 +113,22 @@ Export is JSON metadata plus clip/snapshot URIs (standard clip + JSON as require
 
 | Protocol | Path |
 |---|---|
-| WebSocket | `/ws/alerts?token=` |
-| WebSocket | `/ws/live?token=` |
+| WebSocket | `/ws/alerts` |
+| WebSocket | `/ws/live` |
 
 ## Evidence
 
-`GET /api/v1/evidence/snapshots/{name}?token=` — decrypts snapshot at rest.
+`GET /api/v1/evidence/snapshots/{name}` — validates department scope, decrypts the snapshot and writes an audit event. Credentials never appear in the URL.
 
 ## Example: login + search
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/token \
-  -d 'username=investigator&password=GUSIP@inv2026' | jq -r .access_token)
+curl -s -c cookies.txt -X POST http://localhost:8000/api/v1/auth/token \
+  -d 'username=investigator&password=GUSIP@inv2026' >/dev/null
+CSRF=$(awk '$6 == "gusip_csrf" {print $7}' cookies.txt)
 
-curl -s -H "Authorization: Bearer $TOKEN" \
+curl -s -b cookies.txt -H "X-CSRF-Token: $CSRF" \
   -H 'Content-Type: application/json' \
-  -d '{"plate":"GJ 01 ST 0001"}' \
+  -d '{"plate":"GJ 01 ST 0001","purpose":"stolen_vehicle"}' \
   http://localhost:8000/api/v1/search/events
 ```

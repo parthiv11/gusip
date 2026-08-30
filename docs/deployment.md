@@ -68,21 +68,20 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-## 3. Kubernetes
+## 3. Kubernetes (production)
 
-Manifests in `k8s/` assume a single cluster, namespace `gusip`.
+Manifests in `k8s/` are sized as a **city / state intelligence cluster** (API, GIS, watchlist, evidence), not the 80k-GPU farm. Resource table: `k8s/README.md`.
 
 ```bash
-kubectl apply -f k8s/
+# edit gusip-secrets, ingress host, then:
+kubectl apply -k k8s/
+# regional GPU farm (NVIDIA device plugin + RuntimeClass nvidia)
+kubectl apply -f k8s/gpu-worker.yaml
 ```
 
-Production additions (not all wired in PoC YAML):
+Included: ResourceQuota / LimitRange, StatefulSet + PVC (Postgres 200Gi, Redis 20Gi, MinIO 500Gi), requests/limits, probes, PDB, HPA, TLS Ingress, default-deny NetworkPolicy, optional GPU workers.
 
-- Ingress with TLS (cert-manager)
-- NetworkPolicies between ingest and intel namespaces
-- GPU `RuntimeClass` + NVIDIA device plugin for inference Deployment
-- External Secrets / Vault for `SECRET_KEY` and DB credentials
-- PersistentVolumes for Postgres and object storage (or use cloud managed)
+Replace in-cluster Postgres/MinIO with managed PostGIS and S3 before statewide. GPU counts for 80k cameras are in `docs/scalability.md`.
 
 ## 4. Hybrid on-prem
 

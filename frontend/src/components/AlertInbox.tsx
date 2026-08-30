@@ -26,7 +26,7 @@ export const AlertInbox: React.FC<AlertInboxProps> = ({
           href="/search"
           className="text-xs text-[#D9A441] hover:text-[#E8B858] flex items-center gap-1 font-medium transition-colors"
         >
-          <span>ANPR report</span>
+          <span>Investigate</span>
           <ExternalLink size={12} />
         </a>
       </div>

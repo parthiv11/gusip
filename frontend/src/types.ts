@@ -82,6 +82,7 @@ export interface EventItem {
 }
 
 export interface TrackPoint {
+  id?: number;
   global_track_id: string;
   camera_id: number;
   timestamp: string;
@@ -91,6 +92,8 @@ export interface TrackPoint {
   camera_name?: string | null;
   city?: string | null;
   plate_normalized?: string | null;
+  hits?: number;
+  first_seen?: string | null;
 }
 
 export interface LiveDetection {

@@ -64,13 +64,32 @@
   <section class="slide">
     <h2>How an operator actually uses it</h2>
     <ol>
-      <li>Sign in as <code>operator</code>. The wall defaults to <strong>Gov feeds</strong> — Chimanbhai Bridge is already playing from live.sentinelgujarat.in.</li>
+      <li>Sign in as <code>operator</code>. The wall defaults to <strong>Gov feeds</strong> — Chimanbhai Bridge is already playing from the Sentinel ingest catalogue.</li>
       <li>A watchlist hit lands. The camera jumps into the large pane. Repeat hits on the same camera become <strong>×27</strong>, not 27 cards.</li>
       <li>Yellow numbered pins on the map are open alerts. Click one: screenshot evidence, plate, confidence.</li>
-      <li>Investigate <code>GJ 01 ST 0001</code>, purpose = stolen vehicle. GIS draws Paldi → SG Highway → Gandhinagar.</li>
+      <li>Investigate <code>GJ 01 ST 0001</code>, purpose = stolen vehicle. <strong>Search the State</strong> shows last seen, heading, camera count, confidence, and the time-ordered trail. Click a hop for the still — not a wall of 80,000 live tiles.</li>
       <li>A coordinator in Ahmedabad only sees home-district cameras until they type an FIR reason and take a 30-minute break-glass.</li>
     </ol>
     <p class="quiet">Operators cannot download CSV. Investigators can. Every search writes purpose, user, and IP to the audit trail.</p>
+  </section>
+
+  <section class="slide">
+    <h2>Search the State — not another video wall</h2>
+    <p class="lede">The product is an intelligence overlay. Existing cameras stay on their VMS. We correlate events so an IO can ask “where did this vehicle go?”</p>
+    <div class="scene">
+      <strong>Vehicle:</strong> White SUV &nbsp; <strong>Plate:</strong> GJ 01 ST 0001 &nbsp; <strong>Last seen:</strong> Paldi → SG Highway → Gandhinagar<br />
+      <strong>Direction:</strong> North &nbsp; <strong>Cameras matched:</strong> 5 &nbsp; <strong>Timeline:</strong> click any hop for the evidence still.
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3>Investigator-assisted</h3>
+        <p>Detect, plate when confident, fingerprint (class/colour), trail, likely next camera, watchlist alert, audit of why it was suggested. A human confirms before consequential action.</p>
+      </div>
+      <div class="card">
+        <h3>What we do not centre</h3>
+        <p>Mass facial recognition is not the demo. Identity workflows stay purpose-bound, role-gated, and logged. Cross-camera evidence is the USP.</p>
+      </div>
+    </div>
   </section>
 
   <section class="slide">

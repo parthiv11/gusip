@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
-import { api, can } from "../api/client";
+import { api, can, getSession } from "../api/client";
 import { snapSrc } from "../api/media";
 import InvestigationMap, { InvestigationPoint } from "../components/InvestigationMap";
 import type { EventItem, TrackPoint } from "../types";
@@ -69,8 +69,10 @@ export default function SearchPage() {
   const [faceHits, setFaceHits] = useState<FaceHit[]>([]);
   const [faceEngine, setFaceEngine] = useState("");
   const [error, setError] = useState("");
-  const [selectedCam, setSelectedCam] = useState<number | null>(null);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const canExport = can("export");
+  const session = getSession();
+  const homeScoped = session?.scope === "department";
 
   async function onSearch(e: FormEvent) {
     e.preventDefault();
@@ -90,7 +92,7 @@ export default function SearchPage() {
         setTrack(out.track);
         setFaceHits(out.watchlist);
         setFaceEngine(out.engine);
-        setSelectedCam(out.track[0]?.camera_id ?? out.events[0]?.camera_id ?? null);
+        setSelectedIdx(out.track.length ? out.track.length - 1 : null);
         return;
       }
       setFaceHits([]);
@@ -104,7 +106,7 @@ export default function SearchPage() {
         `/api/v1/search/plate/${encodeURIComponent(plate)}?purpose=${encodeURIComponent(purpose)}`
       );
       setTrack(pts);
-      setSelectedCam(pts[0]?.camera_id ?? ev[0]?.camera_id ?? null);
+      setSelectedIdx(pts.length ? pts.length - 1 : null);
     } catch (err) {
       setError(String(err));
     }
@@ -113,12 +115,13 @@ export default function SearchPage() {
   const uniqueCams = new Set(track.map((p) => p.camera_id)).size;
   const last = track[track.length - 1];
   const first = track[0];
-  const heading = track.length >= 2 ? compass(track[0], track[track.length - 1]) : null;
+  const heading = uniqueCams >= 2 && track.length >= 2 ? compass(track[0], track[track.length - 1]) : null;
   const color = attr(events, "color");
   const klass = attr(events, "vehicle_class") || attr(events, "object_type");
   const meanConf =
     events.length > 0 ? Math.round((events.reduce((s, ev) => s + (ev.confidence || 0), 0) / events.length) * 100) : null;
-  const selectedHop = track.find((p) => p.camera_id === selectedCam) ?? last;
+  const selectedHopIndex = selectedIdx != null && track[selectedIdx] ? selectedIdx : track.length ? track.length - 1 : -1;
+  const selectedHop = selectedHopIndex >= 0 ? track[selectedHopIndex] : last;
   const selectedEvent = selectedHop ? eventForHop(events, selectedHop) : events[0];
   const still = snapSrc(selectedEvent?.snapshot_url);
   const searched = track.length > 0 || events.length > 0 || faceHits.length > 0;
@@ -131,24 +134,27 @@ export default function SearchPage() {
     [track]
   );
 
-  const invPoints: InvestigationPoint[] = useMemo(
-    () =>
-      track.map((p, i) => ({
+  const invPoints: InvestigationPoint[] = useMemo(() => {
+    const seen = new Map<number, number>();
+    return track.map((p, i) => {
+      const n = seen.get(p.camera_id) ?? 0;
+      seen.set(p.camera_id, n + 1);
+      const jitter = n * 0.0012;
+      return {
         id: i + 1,
         camCode: p.camera_code ?? String(p.camera_id),
         name: p.camera_name ?? "",
         city: p.city ?? "",
-        lat: p.latitude,
-        lng: p.longitude,
+        lat: p.latitude + jitter,
+        lng: p.longitude + jitter * 0.6,
         time: new Date(p.timestamp).toLocaleTimeString("en-IN", { hour12: false }),
         date: new Date(p.timestamp).toLocaleDateString("en-IN"),
-        confidence: "",
+        confidence: p.hits && p.hits > 1 ? `${p.hits} hits` : "",
         thumbnail: "",
         isLatest: i === track.length - 1,
-      })),
-    [track]
-  );
-  const selectedHopIndex = track.findIndex((p) => p.camera_id === selectedCam);
+      };
+    });
+  }, [track]);
 
   return (
     <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden bg-[#0B0D10]">
@@ -157,6 +163,15 @@ export default function SearchPage() {
         <p className="text-[11px] text-slate-500 mb-3">
           Investigator-assisted trail. Purpose is mandatory and audited. Face search is logged and meant for enrolled adults on own/demo cameras.
         </p>
+        {homeScoped && (
+          <div className="mb-3 rounded border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[11px] text-orange-200">
+            Showing <span className="font-semibold">home-department cameras only</span>. The stolen Fortuner corridor
+            also uses Traffic / Highway / Gandhinagar feeds.
+            {can("break_glass")
+              ? " Use Break-glass in the header, then search again for the statewide trail."
+              : " Sign in as investigator (break-glass) or admin for the full Ahmedabad → Gandhinagar hops."}
+          </div>
+        )}
         <div className="flex gap-1 mb-3 text-xs">
           {(["plate", "face"] as const).map((id) => (
             <button
@@ -220,7 +235,7 @@ export default function SearchPage() {
         <p className="text-[11px] text-slate-500 mb-3">
           {mode === "face"
             ? "Enroll an adult still on Watchlist (ArcFace). Search with another photo of the same person. Own/demo cameras only."
-            : "Evaluation plate: add it on Watchlist, then wait for ANPR on government feeds."}
+            : "Evaluation plate GJ 01 ST 0001 is already on Watchlist. Search as investigator with break-glass (or admin) to see SG Highway → Gandhinagar hops."}
           {canExport ? (
             <>
               {" "}
@@ -232,7 +247,8 @@ export default function SearchPage() {
                     credentials: "same-origin",
                   });
                   if (!r.ok) {
-                    setError(await r.text());
+                    const text = await r.text();
+                    setError(/<html[\s>]/i.test(text) ? `Export failed (${r.status})` : text);
                     return;
                   }
                   const blob = await r.blob();
@@ -292,22 +308,31 @@ export default function SearchPage() {
           <img src={still} alt="" className="mb-3 w-full max-h-40 object-contain rounded border border-white/10 bg-black" />
         )}
 
-        <div className="text-xs text-slate-500 mb-2">{events.length} events · {track.length} hops — click a hop for the still</div>
+        <div className="text-xs text-slate-500 mb-2">
+          {events.length} detections coalesced into {track.length} camera hop{track.length === 1 ? "" : "s"} — click a hop
+          for the still
+        </div>
         <ol className="space-y-2">
           {track.map((p, i) => {
-            const active = p.camera_id === selectedCam;
+            const active = i === selectedHopIndex;
+            const firstSeen = p.first_seen ? new Date(p.first_seen) : new Date(p.timestamp);
+            const lastSeen = new Date(p.timestamp);
+            const dwell = (p.hits ?? 1) > 1;
             return (
               <li key={`${p.camera_id}-${p.timestamp}-${i}`}>
                 <button
                   type="button"
-                  onClick={() => setSelectedCam(p.camera_id)}
+                  onClick={() => setSelectedIdx(i)}
                   className={`w-full text-left text-sm border rounded p-2 ${
                     active ? "border-brass-400 bg-brass-500/10" : "border-white/10 hover:border-white/20"
                   }`}
                 >
                   <span className="font-mono text-brass-400">{p.camera_code}</span> {p.camera_name}
                   <div className="text-xs text-slate-400">
-                    {p.city} · {new Date(p.timestamp).toLocaleString("en-IN")}
+                    {p.city} ·{" "}
+                    {dwell
+                      ? `${firstSeen.toLocaleString("en-IN")} → ${lastSeen.toLocaleString("en-IN")} · ${p.hits} hits`
+                      : lastSeen.toLocaleString("en-IN")}
                     {i > 0 ? ` · from ${track[i - 1].camera_code}` : " · first hit"}
                   </div>
                 </button>
@@ -321,8 +346,7 @@ export default function SearchPage() {
           points={invPoints}
           selectedEventId={selectedHopIndex >= 0 ? selectedHopIndex + 1 : undefined}
           onSelectEvent={(id) => {
-            const hop = track[id - 1];
-            if (hop) setSelectedCam(hop.camera_id);
+            if (track[id - 1]) setSelectedIdx(id - 1);
           }}
         />
       </div>

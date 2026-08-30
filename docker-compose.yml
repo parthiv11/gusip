@@ -67,6 +67,15 @@ services:
     profiles: ["full"]
     networks: [gusip]
 
+  evidence-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "mkdir -p /data/snapshots /data/clips /data/previews && chown -R 10001:10001 /data"]
+    user: "0:0"
+    volumes:
+      - evidence_data:/data
+    restart: "no"
+    networks: [gusip]
+
   backend:
     build:
       context: ./backend
@@ -80,12 +89,20 @@ services:
       MINIO_BUCKET: gusip-evidence
       MINIO_SECURE: "false"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
+      ADAPTER_KEYS_JSON: '${ADAPTER_KEYS_JSON:-{}}'
+      INGEST_MAX_CLOCK_SKEW_SECONDS: ${INGEST_MAX_CLOCK_SKEW_SECONDS:-300}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost
-      SIMULATION_ENABLED: "true"
-      INFERENCE_MODE: simulate
-      SENTINEL_BASE_URL: https://live.sentinelgujarat.in
-      SENTINEL_ENABLED: "true"
-      SENTINEL_ANPR_ENABLED: "true"
+      SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
+      INFERENCE_MODE: ${INFERENCE_MODE:-simulate}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://live.corp8.cloud}
+      SENTINEL_ENABLED: ${SENTINEL_ENABLED:-true}
+      SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
+      SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
+      SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud}
+      SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
+      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
     ports:
       - "8000:8000"
     depends_on:
@@ -93,12 +110,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      evidence-init:
+        condition: service_completed_successfully
     volumes:
       - evidence_data:/app/data
       - ./backend:/app
     restart: on-failure
     command: >
-      sh -c "python wait_for_db.py && python -m app.seed &&
+      sh -c "python wait_for_db.py && alembic upgrade head && python -m app.seed &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
@@ -106,6 +125,14 @@ services:
       timeout: 5s
       retries: 15
       start_period: 20s
+    networks: [gusip]
+
+  mediamtx:
+    image: bluenviron/mediamtx:1.11.3
+    environment:
+      MTX_RTSPTRANSPORTS: tcp
+      MTX_LOGLEVEL: warn
+    restart: unless-stopped
     networks: [gusip]
 
   worker:
@@ -121,17 +148,26 @@ services:
       MINIO_BUCKET: gusip-evidence
       MINIO_SECURE: "false"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
-      SIMULATION_ENABLED: "true"
-      INFERENCE_MODE: yolo
+      SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
+      INFERENCE_MODE: ${WORKER_INFERENCE_MODE:-yolo}
       USE_KAFKA: "false"
-      SENTINEL_BASE_URL: https://live.sentinelgujarat.in
-      SENTINEL_ENABLED: "true"
-      SENTINEL_ANPR_ENABLED: "true"
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://live.corp8.cloud}
+      SENTINEL_ENABLED: ${SENTINEL_ENABLED:-true}
+      SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
+      SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
+      SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud}
+      SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
+      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
+      SENTINEL_LOCAL_RTSP_URL: ${SENTINEL_LOCAL_RTSP_URL:-rtsp://mediamtx:8554}
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
     depends_on:
       backend:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mediamtx:
+        condition: service_started
     volumes:
       - evidence_data:/app/data
       - ./backend:/app
@@ -147,7 +183,7 @@ services:
         VITE_API_URL: /api
         VITE_WS_URL: /ws
     ports:
-      - "8080:80"
+      - "8080:8080"
     depends_on:
       - backend
     networks: [gusip]

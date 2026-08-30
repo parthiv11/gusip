@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from jose import JWTError, jwt
+import httpx
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from jose import JWTError
+from sqlalchemy import select
 
 from app.config import get_settings
+from app.core.break_glass import department_scope
+from app.core.security import decode_access_token
+from app.db import SessionLocal
+from app.models.user import User
 from app.services.event_bus import CHANNEL_ALERTS, CHANNEL_LIVE, bus
 
 router = APIRouter(tags=["realtime"])
@@ -16,19 +21,22 @@ settings = get_settings()
 
 class Hub:
     def __init__(self) -> None:
-        self.clients: set[WebSocket] = set()
+        self.clients: dict[WebSocket, int | None] = {}
 
-    async def connect(self, ws: WebSocket) -> None:
+    async def connect(self, ws: WebSocket, scoped_to: int | None) -> None:
         await ws.accept()
-        self.clients.add(ws)
+        self.clients[ws] = scoped_to
 
     def disconnect(self, ws: WebSocket) -> None:
-        self.clients.discard(ws)
+        self.clients.pop(ws, None)
 
     async def broadcast(self, message: dict) -> None:
         dead = []
         data = json.dumps(message, default=str)
-        for ws in list(self.clients):
+        department_id = message.get("department_id")
+        for ws, scoped_to in list(self.clients.items()):
+            if scoped_to is not None and department_id != scoped_to:
+                continue
             try:
                 await ws.send_text(data)
             except Exception:
@@ -41,38 +49,55 @@ alerts_hub = Hub()
 live_hub = Hub()
 
 
-def _user_from_token(token: str) -> str | None:
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        return payload.get("sub")
-    except JWTError:
+async def _principal_from_ws(ws: WebSocket) -> tuple[str, int | None] | None:
+    token = ws.cookies.get(settings.session_cookie_name)
+    if not token:
         return None
+    try:
+        payload = await decode_access_token(token)
+        username = payload.get(settings.oidc_username_claim) if settings.auth_provider == "oidc" else payload.get("sub")
+    except (JWTError, httpx.HTTPError):
+        return None
+    if not username:
+        return None
+    async with SessionLocal() as db:
+        user = await db.scalar(select(User).where(User.username == username, User.is_active.is_(True)))
+        if user is None:
+            return None
+        return user.username, await department_scope(user)
+
+
+async def _serve(ws: WebSocket, hub: Hub) -> None:
+    principal = await _principal_from_ws(ws)
+    if principal is None:
+        await ws.close(code=4401)
+        return
+    _, scoped_to = principal
+    await hub.connect(ws, scoped_to)
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=60)
+            except asyncio.TimeoutError:
+                refreshed = await _principal_from_ws(ws)
+                if refreshed is None:
+                    await ws.close(code=4401)
+                    return
+                hub.clients[ws] = refreshed[1]
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.disconnect(ws)
 
 
 @router.websocket("/ws/alerts")
-async def ws_alerts(ws: WebSocket, token: str = ""):
-    if not _user_from_token(token):
-        await ws.close(code=4401)
-        return
-    await alerts_hub.connect(ws)
-    try:
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        alerts_hub.disconnect(ws)
+async def ws_alerts(ws: WebSocket):
+    await _serve(ws, alerts_hub)
 
 
 @router.websocket("/ws/live")
-async def ws_live(ws: WebSocket, token: str = ""):
-    if not _user_from_token(token):
-        await ws.close(code=4401)
-        return
-    await live_hub.connect(ws)
-    try:
-        while True:
-            await ws.receive_text()
-    except WebSocketDisconnect:
-        live_hub.disconnect(ws)
+async def ws_live(ws: WebSocket):
+    await _serve(ws, live_hub)
 
 
 async def relay_redis() -> None:
