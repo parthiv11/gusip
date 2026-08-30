@@ -20,6 +20,7 @@ class WatchlistEntry(Base):
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     appearance_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra: Mapped[dict] = mapped_column(JSONB, default=dict)
+    face_embedding: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     priority: Mapped[str] = mapped_column(String(16), default="high")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
