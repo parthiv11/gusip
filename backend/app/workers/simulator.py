@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.camera import Camera
+from app.services.face import canned_embedding
 from app.services.pipeline import ingest_detection
 
 # Stolen vehicle corridor: Ahmedabad west -> north -> Gandhinagar link
@@ -118,7 +119,7 @@ class Simulator:
         )
 
     def _wanted_payload(self, cam: Camera) -> dict[str, Any]:
-        return self._det(
+        payload = self._det(
             cam,
             object_type="person",
             plate=None,
@@ -126,9 +127,12 @@ class Simulator:
                 "clothing": "grey hoodie",
                 "watch_tag": "wanted-rakesh",
                 "source_type": cam.source_type,
+                "face_engine": "canned",
             },
             confidence=0.86,
         )
+        payload["embedding"] = canned_embedding("wanted-rakesh")
+        return payload
 
     def _det(self, cam: Camera, object_type: str, plate: str | None, attrs: dict, confidence: float = 0.88) -> dict[str, Any]:
         x, y = self.rng.randint(40, 280), self.rng.randint(40, 160)

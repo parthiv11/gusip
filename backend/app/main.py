@@ -22,6 +22,7 @@ async def lifespan(app: FastAPI):
         from app import models  # noqa: F401
 
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS face_embedding JSONB"))
     async with SessionLocal() as db:
         await collapse_duplicate_open_alerts(db)
         await db.commit()
@@ -33,6 +34,10 @@ async def lifespan(app: FastAPI):
             )
         )
     await bus.connect()
+    if settings.face_enabled:
+        from app.services.face import warmup_arcface
+
+        asyncio.create_task(asyncio.to_thread(warmup_arcface))
     relay_task = asyncio.create_task(ws.relay_redis())
     yield
     relay_task.cancel()
@@ -84,4 +89,11 @@ async def meta():
         "architecture": "hybrid-federation",
         "poc_cameras": 50,
         "scale_target": 80000,
+        "face": _face_status(),
     }
+
+
+def _face_status() -> dict:
+    from app.services.face import arcface_status
+
+    return arcface_status()
