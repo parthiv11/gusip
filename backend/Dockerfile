@@ -16,6 +16,8 @@ RUN grep -v '^ultralytics' requirements.txt > /tmp/req.txt \
 
 COPY . .
 
+RUN mkdir -p /app/data
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 

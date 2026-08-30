@@ -127,3 +127,64 @@ def test_sentinel_ingest_catalogue_shape():
     offline = normalize_camera({"id": "9", "status": "offline", "live": False})
     assert offline["live"] is False
     assert "8554/stream/9" in offline["rtsp_url"]
+
+
+def test_canned_face_embedding_stable_and_distinct():
+    from app.services.face import canned_embedding, cosine_score
+
+    a = canned_embedding("wanted-rakesh")
+    b = canned_embedding("wanted-rakesh")
+    other = canned_embedding("wanted-kiran")
+    assert len(a) == 512
+    assert cosine_score(a, b) > 0.99
+    assert cosine_score(a, other) < 0.4
+
+
+def test_person_match_uses_face_embedding():
+    from app.services.face import MATCH_THRESHOLD, canned_embedding
+
+    vec = canned_embedding("wanted-rakesh")
+    entry = WatchlistEntry(
+        entity_type="person",
+        category="wanted_person",
+        name="Rakesh M.",
+        appearance_notes="",
+        extra={"sim_tag": "wanted-rakesh"},
+        face_embedding=vec,
+    )
+    ok, conf = match_entry(entry, None, {}, embedding=vec)
+    assert ok and conf >= MATCH_THRESHOLD
+    no, _ = match_entry(entry, None, {}, embedding=canned_embedding("wanted-kiran"))
+    assert not no
+
+
+def test_person_clothing_fallback_without_face_vector():
+    entry = WatchlistEntry(
+        entity_type="person",
+        category="wanted_person",
+        name="Rakesh M.",
+        appearance_notes="grey hoodie",
+        extra={"sim_tag": "wanted-rakesh"},
+        face_embedding=None,
+    )
+    ok, conf = match_entry(entry, None, {"clothing": "grey hoodie"})
+    assert ok and conf == 0.72
+    tagged, tconf = match_entry(entry, None, {"watch_tag": "wanted-rakesh"})
+    assert tagged and tconf == 0.88
+
+
+def test_live_face_skips_sentinel_street_feeds():
+    from app.services.face import should_run_live_face
+
+    assert should_run_live_face("sentinel") is False
+    assert should_run_live_face("rtsp") is True
+    assert should_run_live_face("onvif") is True
+
+
+def test_arcface_status_reports_engine():
+    from app.services.face import arcface_status
+
+    status = arcface_status()
+    assert status["engine"] == "arcface"
+    assert status["model"] == "buffalo_l"
+    assert "ready" in status

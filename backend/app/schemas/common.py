@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class Token(BaseModel):
@@ -105,6 +105,19 @@ class CameraOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @field_serializer("extra")
+    def redact_upstream_media(self, value: dict[str, Any]) -> dict[str, Any]:
+        sensitive = {
+            "rtsp_url",
+            "hls_url",
+            "hls_live_url",
+            "whep_url",
+            "webrtc_url",
+            "stream_url",
+            "portal",
+        }
+        return {key: item for key, item in value.items() if key not in sensitive}
+
 
 class WatchlistCreate(BaseModel):
     entity_type: str
@@ -130,6 +143,8 @@ class WatchlistOut(BaseModel):
     priority: str
     is_active: bool
     created_at: datetime
+    photo_url: str | None = None
+    has_face: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -201,6 +216,7 @@ class CaseOut(BaseModel):
     description: str | None
     status: str
     created_by: str
+    department_id: int | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -218,6 +234,25 @@ class SearchQuery(BaseModel):
     vehicle_class: str | None = None
     purpose: str
     limit: int = 100
+
+
+class FaceWatchlistHit(BaseModel):
+    id: int
+    name: str | None
+    category: str
+    score: float
+    photo_url: str | None = None
+    priority: str = "high"
+
+
+class FaceSearchOut(BaseModel):
+    engine: str
+    query_has_face: bool
+    threshold: float
+    watchlist: list[FaceWatchlistHit]
+    events: list[EventOut]
+    track: list[TrackPointOut]
+    global_track_id: str | None = None
 
 
 class GapZone(BaseModel):
