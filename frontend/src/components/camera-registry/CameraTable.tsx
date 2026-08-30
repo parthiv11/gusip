@@ -24,7 +24,7 @@ export const CameraTable: React.FC<CameraTableProps> = ({
   sortField,
   sortOrder,
   onSort,
-  highlightedCode = "AMD-BA-01",
+  highlightedCode,
 }) => {
   const columns: { field: SortField; label: string; width?: string; align?: string }[] = [
     { field: "code", label: "CODE", width: "w-[150px]" },

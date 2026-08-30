@@ -1,284 +1,149 @@
-import React, { useState, useMemo, useEffect } from "react";
-import {
-  INITIAL_CAMERA_GROUPS,
-  CityCameraGroup,
-  RegistryCamera,
-} from "../components/camera-registry/cameraData";
-import { SearchBar } from "../components/camera-registry/SearchBar";
-import {
-  FilterDropdown,
-  FilterOption,
-} from "../components/camera-registry/FilterDropdown";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 import {
   CameraTable,
   SortField,
   SortOrder,
 } from "../components/camera-registry/CameraTable";
+import { FilterDropdown, FilterOption } from "../components/camera-registry/FilterDropdown";
 import { Pagination } from "../components/camera-registry/Pagination";
-import { api } from "../api/client";
+import { SearchBar } from "../components/camera-registry/SearchBar";
+import { groupCameras, RegistryCamera } from "../components/camera-registry/cameraData";
 import type { Camera } from "../types";
 
+function toRegistry(c: Camera): RegistryCamera {
+  return {
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    city: c.city || "Unknown",
+    source_type: (c.source_type || "rtsp").toUpperCase(),
+    camera_type: c.camera_type || "ip",
+    status: c.status === "offline" ? "offline" : "online",
+    amc_status: c.amc_status === "expired" ? "expired" : "active",
+    department: c.department?.name || "",
+  };
+}
+
 export default function CamerasPage() {
+  const [cameras, setCameras] = useState<RegistryCamera[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
   const [cityFilter, setCityFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
-
   const [sortField, setSortField] = useState<SortField>("code");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
-
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-
-  // Expanded cities state - matching reference: Ahmedabad, Vadodara, Surat expanded; Rajkot, Gandhinagar collapsed
-  const [expandedCities, setExpandedCities] = useState<Record<string, boolean>>({
-    Ahmedabad: true,
-    Vadodara: true,
-    Surat: true,
-    Rajkot: false,
-    Gandhinagar: false,
-  });
-
-  const [apiCameras, setApiCameras] = useState<Camera[]>([]);
+  const [expandedCities, setExpandedCities] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // Optionally fetch backend cameras if available
     api<Camera[]>("/api/v1/cameras")
-      .then((data) => {
-        if (data && data.length > 0) {
-          setApiCameras(data);
-        }
-      })
-      .catch(() => {
-        // Fallback to pre-seeded realistic dataset
-      });
+      .then((rows) => setCameras(rows.map(toRegistry)))
+      .catch((err) => setError(String(err)));
   }, []);
 
-  const handleToggleCity = (city: string) => {
-    setExpandedCities((prev) => ({
-      ...prev,
-      [city]: !prev[city],
-    }));
-  };
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return cameras.filter((c) => {
+      if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (deptFilter !== "all" && c.department !== deptFilter) return false;
+      if (cityFilter !== "all" && c.city !== cityFilter) return false;
+      if (sourceFilter !== "all" && c.source_type !== sourceFilter) return false;
+      if (!q) return true;
+      return (
+        c.code.toLowerCase().includes(q) ||
+        c.name.toLowerCase().includes(q) ||
+        c.city.toLowerCase().includes(q)
+      );
+    });
+  }, [cameras, searchQuery, statusFilter, deptFilter, cityFilter, sourceFilter]);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder("asc");
-    }
-  };
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const av = String(a[sortField] ?? "");
+      const bv = String(b[sortField] ?? "");
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [filtered, sortField, sortOrder]);
 
-  // Base camera groups
-  const baseGroups: CityCameraGroup[] = useMemo(() => {
-    return INITIAL_CAMERA_GROUPS;
-  }, [apiCameras]);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const pageRows = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const groups = useMemo(() => groupCameras(pageRows), [pageRows]);
 
-  // Compute total counts across cities
-  const totalCameraCount = useMemo(() => {
-    return baseGroups.reduce((acc, g) => acc + g.totalCount, 0);
-  }, [baseGroups]);
+  const onlineCount = cameras.filter((c) => c.status === "online").length;
+  const offlineCount = cameras.filter((c) => c.status === "offline").length;
+  const cities = [...new Set(cameras.map((c) => c.city))].sort();
+  const depts = [...new Set(cameras.map((c) => c.department).filter(Boolean))].sort();
+  const sources = [...new Set(cameras.map((c) => c.source_type))].sort();
 
-  // Status breakdown numbers
-  const onlineCount = 366;
-  const offlineCount = 46;
-
-  // Filter options
   const statusOptions: FilterOption[] = [
     { value: "all", label: "All status" },
     { value: "online", label: `Online (${onlineCount})` },
     { value: "offline", label: `Offline (${offlineCount})` },
   ];
-
   const departmentOptions: FilterOption[] = [
     { value: "all", label: "All departments" },
-    { value: "Ahmedabad City Police", label: "Ahmedabad City Police" },
-    { value: "Vadodara City Police", label: "Vadodara City Police" },
-    { value: "Surat City Police", label: "Surat City Police" },
-    { value: "Rajkot City Police", label: "Rajkot City Police" },
-    { value: "Gandhinagar Police", label: "Gandhinagar Police" },
+    ...depts.map((d) => ({ value: d, label: d })),
   ];
-
   const cityOptions: FilterOption[] = [
     { value: "all", label: "All cities" },
-    { value: "Ahmedabad", label: "Ahmedabad" },
-    { value: "Vadodara", label: "Vadodara" },
-    { value: "Surat", label: "Surat" },
-    { value: "Rajkot", label: "Rajkot" },
-    { value: "Gandhinagar", label: "Gandhinagar" },
+    ...cities.map((c) => ({ value: c, label: c })),
   ];
-
   const sourceOptions: FilterOption[] = [
     { value: "all", label: "All sources" },
-    { value: "ONVIF", label: "ONVIF" },
-    { value: "RTSP", label: "RTSP" },
-    { value: "VENDOR_API", label: "VENDOR_API" },
+    ...sources.map((s) => ({ value: s, label: s })),
   ];
 
-  // Process and filter camera groups
-  const filteredGroups = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-
-    return baseGroups
-      .map((group) => {
-        // If city filter applied and does not match
-        if (cityFilter !== "all" && group.city !== cityFilter) {
-          return null;
-        }
-
-        // Filter individual cameras inside the group
-        let cams = group.cameras.filter((c: RegistryCamera) => {
-          // Search query
-          if (q) {
-            const matchesCode = c.code.toLowerCase().includes(q);
-            const matchesName = c.name.toLowerCase().includes(q);
-            const matchesCity = c.city.toLowerCase().includes(q);
-            const matchesDept = c.department.toLowerCase().includes(q);
-            if (!matchesCode && !matchesName && !matchesCity && !matchesDept) {
-              return false;
-            }
-          }
-
-          // Status filter
-          if (statusFilter !== "all" && c.status !== statusFilter) {
-            return false;
-          }
-
-          // Department filter
-          if (deptFilter !== "all" && c.department !== deptFilter) {
-            return false;
-          }
-
-          // Source filter
-          if (sourceFilter !== "all" && c.source_type !== sourceFilter) {
-            return false;
-          }
-
-          return true;
-        });
-
-        // Apply sorting only when user explicitly toggles or when filtering
-        if (sortField !== "code" || sortOrder !== "asc") {
-          cams = [...cams].sort((a, b) => {
-            const valA = String(a[sortField] || "").toLowerCase();
-            const valB = String(b[sortField] || "").toLowerCase();
-            if (valA < valB) return sortOrder === "asc" ? -1 : 1;
-            if (valA > valB) return sortOrder === "asc" ? 1 : -1;
-            return 0;
-          });
-        }
-
-        // If filtering is active and no cameras in this group match, omit
-        if ((q || statusFilter !== "all" || deptFilter !== "all" || sourceFilter !== "all") && cams.length === 0) {
-          return null;
-        }
-
-        return {
-          ...group,
-          cameras: cams,
-        };
-      })
-      .filter((g): g is CityCameraGroup => g !== null);
-  }, [
-    baseGroups,
-    searchQuery,
-    statusFilter,
-    deptFilter,
-    cityFilter,
-    sourceFilter,
-    sortField,
-    sortOrder,
-  ]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, deptFilter, cityFilter, sourceFilter, pageSize]);
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0B0D10] text-[#F2F4F7] select-none px-6 lg:px-8 py-5 flex flex-col justify-between">
-      <div className="w-full">
-        {/* Page Header */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-4 shrink-0">
-          {/* Title & Subtitle */}
-          <div>
-            <h1 className="text-[22px] lg:text-[24px] font-bold text-[#F2F4F7] tracking-tight leading-tight">
-              Camera registry
-            </h1>
-            <div className="text-[13px] text-[#A8B2C1] mt-1 font-normal">
-              <span className="text-[#D9A441] font-semibold">{totalCameraCount}</span>{" "}
-              cameras across 10 cities
-            </div>
-          </div>
-
-          {/* Search & Filters */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <SearchBar
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Filter code, name, city"
-            />
-
-            {/* Status Dropdown with Custom 366 / 46 badge */}
-            <FilterDropdown
-              value={statusFilter}
-              options={statusOptions}
-              onChange={setStatusFilter}
-              customButtonContent={
-                <div className="flex items-center gap-1.5 text-[13px]">
-                  <span className="font-normal text-[#F2F4F7]">All status</span>
-                  <span className="font-semibold text-[#35D58A] ml-0.5">{onlineCount}</span>
-                  <span className="text-[#6F7D91]">/</span>
-                  <span className="font-semibold text-[#EF4444]">{offlineCount}</span>
-                </div>
-              }
-            />
-
-            {/* Department Dropdown */}
-            <FilterDropdown
-              value={deptFilter}
-              options={departmentOptions}
-              onChange={setDeptFilter}
-            />
-
-            {/* City Dropdown */}
-            <FilterDropdown
-              value={cityFilter}
-              options={cityOptions}
-              onChange={setCityFilter}
-            />
-
-            {/* Source Dropdown */}
-            <FilterDropdown
-              value={sourceFilter}
-              options={sourceOptions}
-              onChange={setSourceFilter}
-            />
-          </div>
-        </div>
-
-        {/* Main Table Container */}
-        <div className="w-full">
-          <CameraTable
-            groups={filteredGroups}
-            expandedCities={expandedCities}
-            onToggleCity={handleToggleCity}
-            sortField={sortField}
-            sortOrder={sortOrder}
-            onSort={handleSort}
-            highlightedCode="AMD-BA-01"
-          />
+    <div className="h-full p-4 overflow-auto bg-[#0B0D10]">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-4">
+        <h1 className="text-lg font-semibold text-[#F2F4F7]">Camera registry</h1>
+        <div className="lg:ml-auto flex flex-wrap items-center gap-2">
+          <SearchBar value={searchQuery} onChange={setSearchQuery} />
+          <FilterDropdown value={statusFilter} options={statusOptions} onChange={setStatusFilter} />
+          <FilterDropdown value={cityFilter} options={cityOptions} onChange={setCityFilter} />
+          <FilterDropdown value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
+          <FilterDropdown value={deptFilter} options={departmentOptions} onChange={setDeptFilter} />
         </div>
       </div>
-
-      {/* Pagination Bar strictly below the table */}
-      <div className="w-full pt-3 pb-4">
-        <Pagination
-          currentPage={currentPage}
-          totalPages={9}
-          totalItems={totalCameraCount}
-          pageSize={pageSize}
-          onPageChange={setCurrentPage}
-          onPageSizeChange={setPageSize}
-        />
-      </div>
+      {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
+      <CameraTable
+        groups={groups}
+        expandedCities={expandedCities}
+        onToggleCity={(city) =>
+          setExpandedCities((prev) => ({ ...prev, [city]: !(prev[city] ?? true) }))
+        }
+        sortField={sortField}
+        sortOrder={sortOrder}
+        onSort={(field) => {
+          if (sortField === field) setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+          else {
+            setSortField(field);
+            setSortOrder("asc");
+          }
+        }}
+      />
+      <Pagination
+        currentPage={Math.min(currentPage, totalPages)}
+        totalPages={totalPages}
+        totalItems={sorted.length}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setCurrentPage(1);
+        }}
+      />
     </div>
   );
 }

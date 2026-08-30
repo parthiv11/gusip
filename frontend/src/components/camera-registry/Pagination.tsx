@@ -12,8 +12,8 @@ interface PaginationProps {
 
 export const Pagination: React.FC<PaginationProps> = ({
   currentPage = 1,
-  totalPages = 9,
-  totalItems = 412,
+  totalPages = 1,
+  totalItems = 0,
   pageSize = 50,
   onPageChange,
   onPageSizeChange,
@@ -21,15 +21,19 @@ export const Pagination: React.FC<PaginationProps> = ({
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const startItem = Math.min((currentPage - 1) * pageSize + 1, totalItems);
+  const startItem = totalItems === 0 ? 0 : Math.min((currentPage - 1) * pageSize + 1, totalItems);
   const endItem = Math.min(currentPage * pageSize, totalItems);
+  const pages = Array.from({ length: Math.max(totalPages, 1) }, (_, i) => i + 1).filter(
+    (pageNum) =>
+      totalPages <= 7 ||
+      pageNum === 1 ||
+      pageNum === totalPages ||
+      Math.abs(pageNum - currentPage) <= 1
+  );
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setPageSizeOpen(false);
       }
     }
@@ -39,15 +43,12 @@ export const Pagination: React.FC<PaginationProps> = ({
 
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 select-none">
-      {/* Left: Showing X-Y of Total */}
       <div className="text-[13px] text-[#A8B2C1] font-normal">
         Showing {startItem}-{endItem} of{" "}
         <span className="text-[#D9A441] font-medium">{totalItems}</span>
       </div>
 
-      {/* Right: Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Prev button */}
         <button
           type="button"
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
@@ -58,52 +59,39 @@ export const Pagination: React.FC<PaginationProps> = ({
           <ChevronLeft size={15} />
         </button>
 
-        {/* Page buttons (1, 2, 3, 4, 5, ..., 9) */}
-        {[1, 2, 3, 4, 5].map((pageNum) => {
+        {pages.map((pageNum, idx) => {
+          const prev = pages[idx - 1];
           const isActive = currentPage === pageNum;
           return (
-            <button
-              key={pageNum}
-              type="button"
-              onClick={() => onPageChange(pageNum)}
-              className={`w-8 h-8 rounded-[4px] text-xs font-medium flex items-center justify-center transition-colors ${
-                isActive
-                  ? "bg-[#D9A441] text-[#0B0D10] font-bold shadow-[0_0_8px_rgba(217,164,65,0.3)]"
-                  : "bg-[#10151F] border border-white/[0.08] text-[#8E9AA8] hover:text-[#F2F4F7] hover:bg-[#151B27]"
-              }`}
-            >
-              {pageNum}
-            </button>
+            <span key={pageNum} className="inline-flex items-center gap-1.5">
+              {prev != null && pageNum - prev > 1 && (
+                <span className="w-5 text-center text-xs text-[#6F7D91] font-medium">...</span>
+              )}
+              <button
+                type="button"
+                onClick={() => onPageChange(pageNum)}
+                className={`w-8 h-8 rounded-[4px] text-xs font-medium flex items-center justify-center transition-colors ${
+                  isActive
+                    ? "bg-[#D9A441] text-[#0B0D10] font-bold shadow-[0_0_8px_rgba(217,164,65,0.3)]"
+                    : "bg-[#10151F] border border-white/[0.08] text-[#8E9AA8] hover:text-[#F2F4F7] hover:bg-[#151B27]"
+                }`}
+              >
+                {pageNum}
+              </button>
+            </span>
           );
         })}
 
-        <span className="w-5 text-center text-xs text-[#6F7D91] font-medium">...</span>
-
-        {/* Last page (e.g. 9) */}
-        <button
-          type="button"
-          onClick={() => onPageChange(totalPages)}
-          className={`w-8 h-8 rounded-[4px] text-xs font-medium flex items-center justify-center transition-colors ${
-            currentPage === totalPages
-              ? "bg-[#D9A441] text-[#0B0D10] font-bold shadow-[0_0_8px_rgba(217,164,65,0.3)]"
-              : "bg-[#10151F] border border-white/[0.08] text-[#8E9AA8] hover:text-[#F2F4F7] hover:bg-[#151B27]"
-          }`}
-        >
-          {totalPages}
-        </button>
-
-        {/* Next button */}
         <button
           type="button"
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
+          disabled={currentPage === totalPages || totalPages === 0}
           className="w-8 h-8 rounded-[4px] bg-[#10151F] border border-white/[0.08] flex items-center justify-center text-[#8E9AA8] hover:text-[#F2F4F7] hover:bg-[#151B27] disabled:opacity-40 disabled:hover:bg-[#10151F] disabled:hover:text-[#8E9AA8] transition-colors"
           aria-label="Next page"
         >
           <ChevronRight size={15} />
         </button>
 
-        {/* Page size dropdown */}
         <div className="relative ml-2" ref={dropdownRef}>
           <button
             type="button"
@@ -115,7 +103,7 @@ export const Pagination: React.FC<PaginationProps> = ({
           </button>
 
           {pageSizeOpen && (
-            <div className="absolute right-0 bottom-full mb-1.5 w-28 bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+            <div className="absolute right-0 bottom-full mb-1.5 w-28 bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50">
               {[25, 50, 100].map((size) => (
                 <button
                   key={size}

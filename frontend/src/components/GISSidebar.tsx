@@ -10,25 +10,6 @@ export interface CoverageGapItem {
   colorType: "critical" | "warning" | "moderate" | "good";
 }
 
-export const COVERAGE_GAP_DATA: CoverageGapItem[] = [
-  { city: "Modasa", current: 2, target: 8, lat: 23.4632, lon: 73.2984, colorType: "critical" },
-  { city: "Deesa", current: 3, target: 10, lat: 24.2585, lon: 72.1812, colorType: "critical" },
-  { city: "Palanpur", current: 4, target: 12, lat: 24.1724, lon: 72.4346, colorType: "critical" },
-  { city: "Mandvi", current: 3, target: 8, lat: 22.8335, lon: 69.3567, colorType: "warning" },
-  { city: "Porbandar", current: 4, target: 10, lat: 21.6417, lon: 69.6293, colorType: "warning" },
-  { city: "Bharuch", current: 6, target: 12, lat: 21.7051, lon: 72.9959, colorType: "warning" },
-  { city: "Navsari", current: 8, target: 12, lat: 20.9467, lon: 72.9520, colorType: "moderate" },
-  { city: "Morbi", current: 9, target: 12, lat: 22.8173, lon: 70.8377, colorType: "moderate" },
-  { city: "Jamnagar", current: 12, target: 14, lat: 22.4707, lon: 70.0577, colorType: "good" },
-  { city: "Rajkot", current: 15, target: 16, lat: 22.3039, lon: 70.8022, colorType: "good" },
-  { city: "Gandhidham", current: 7, target: 10, lat: 23.0753, lon: 70.1337, colorType: "moderate" },
-  { city: "Junagadh", current: 8, target: 10, lat: 21.5222, lon: 70.4579, colorType: "moderate" },
-  { city: "Bhavnagar", current: 10, target: 12, lat: 21.7645, lon: 72.1519, colorType: "good" },
-  { city: "Vadodara", current: 18, target: 20, lat: 22.3072, lon: 73.1812, colorType: "good" },
-  { city: "Ahmedabad", current: 28, target: 30, lat: 23.0225, lon: 72.5714, colorType: "good" },
-  { city: "Surat", current: 22, target: 24, lat: 21.1702, lon: 72.8311, colorType: "good" },
-];
-
 interface GISSidebarProps {
   statusFilter: string;
   onStatusFilterChange: (val: string) => void;
@@ -37,6 +18,7 @@ interface GISSidebarProps {
   departments: { id: string | number; name: string }[];
   onSelectCity: (city: CoverageGapItem) => void;
   selectedCityName?: string | null;
+  gaps: CoverageGapItem[];
 }
 
 export default function GISSidebar({
@@ -47,7 +29,9 @@ export default function GISSidebar({
   departments,
   onSelectCity,
   selectedCityName,
+  gaps,
 }: GISSidebarProps) {
+  const underTarget = gaps.filter((g) => g.current < g.target).length;
   const getProgressBarClass = (colorType: CoverageGapItem["colorType"]) => {
     switch (colorType) {
       case "critical":
@@ -158,13 +142,13 @@ export default function GISSidebar({
             Coverage Gaps
           </h3>
           <span className="px-2.5 py-0.5 rounded-[4px] border border-[#F05252]/40 bg-[#F05252]/10 text-[#F05252] text-[11px] font-medium tracking-wide">
-            7 cities under target
+            {underTarget} {underTarget === 1 ? "city" : "cities"} under target
           </span>
         </div>
 
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto space-y-2 pr-1.5 min-h-0">
-          {COVERAGE_GAP_DATA.map((item) => {
+          {gaps.map((item) => {
             const isSelected = selectedCityName === item.city;
             const pct = Math.min(100, Math.round((item.current / item.target) * 100));
             return (

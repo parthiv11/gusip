@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import Hls from "hls.js";
 import { getSession } from "../api/client";
 import type { Camera, LiveDetection } from "../types";
 
@@ -11,19 +10,18 @@ export function sentinelId(camera: Camera): string | null {
   return null;
 }
 
+/** Browser playback fallback (range requests). Inference never uses this URL. */
 export function streamProxy(camera: Camera): string | null {
   const sid = sentinelId(camera);
   if (!sid) return null;
-  const token = getSession()?.token ?? "";
-  return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/stream?token=${encodeURIComponent(token)}`;
+  return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/stream`;
 }
 
 export function previewSrc(camera: Camera, bust?: number): string | undefined {
   const sid = sentinelId(camera);
   if (!sid) return undefined;
-  const token = getSession()?.token ?? "";
-  const t = bust != null ? `&t=${bust}` : "";
-  return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/preview?token=${encodeURIComponent(token)}${t}`;
+  const t = bust != null ? `?t=${bust}` : "";
+  return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/preview${t}`;
 }
 
 export default function GovPlayer({
@@ -38,10 +36,8 @@ export default function GovPlayer({
   const ref = useRef<HTMLVideoElement>(null);
   const sid = sentinelId(camera);
   const src = streamProxy(camera);
-  const hlsUrl =
-    (typeof camera.extra?.hls_url === "string" && camera.extra.hls_url) ||
-    (typeof camera.extra?.hls_live_url === "string" && camera.extra.hls_live_url) ||
-    null;
+  const portal =
+    typeof camera.extra?.portal === "string" ? camera.extra.portal.replace(/\/$/, "") : "";
   const [videoReady, setVideoReady] = useState(false);
   const [bust, setBust] = useState(() => Date.now());
   const [posterOk, setPosterOk] = useState(true);
@@ -63,12 +59,11 @@ export default function GovPlayer({
   useEffect(() => {
     const video = ref.current;
     if (!video || !sid) return;
-    let hls: Hls | null = null;
     let cancelled = false;
 
     async function start() {
       const state = await fetch(`/api/v1/feeds/sentinel/${sid}/state`, {
-        headers: { Authorization: `Bearer ${getSession()?.token ?? ""}` },
+        credentials: "same-origin",
       }).then((r) => (r.ok ? r.json() : null));
       if (cancelled || !video) return;
       const offset = Number(state?.slot_offset ?? state?.offset ?? 0);
@@ -94,37 +89,20 @@ export default function GovPlayer({
         video.addEventListener("playing", markReady);
       }
 
-      if (hlsUrl && Hls.isSupported()) {
-        const resolved = hlsUrl.startsWith("http") ? hlsUrl : `https://live.sentinelgujarat.in${hlsUrl}`;
-        hls = new Hls({ startPosition: offset, maxBufferLength: 30 });
-        hls.loadSource(resolved);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => undefined));
-        hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) {
-            hls?.destroy();
-            hls = null;
-            playHttpFallback();
-          }
-        });
-        video.addEventListener("playing", markReady);
-        return;
-      }
       playHttpFallback();
     }
     start();
     return () => {
       cancelled = true;
-      if (hls) hls.destroy();
       video.removeAttribute("src");
       video.load();
     };
-  }, [sid, src, hlsUrl, autoPlay]);
+  }, [sid, src, autoPlay]);
 
   const bbox = live?.bbox;
 
   return (
-    <div className="relative aspect-video bg-black rounded overflow-hidden border border-white/10">
+    <div className="relative h-full min-h-[200px] w-full bg-black overflow-hidden border border-white/10">
       {poster && posterOk && (
         <img
           src={poster}
@@ -157,7 +135,7 @@ export default function GovPlayer({
         </div>
       )}
       <div className="absolute top-2 left-2 text-[10px] font-mono bg-black/60 px-1.5 py-0.5 rounded text-orange-300">
-        GOV · {camera.code} · live.sentinelgujarat.in
+        GOV · {camera.code} · {(portal || "sentinel").replace(/^https?:\/\//, "")}
       </div>
       <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2 text-[10px] font-mono text-white/80">
         <span className="truncate">{camera.address || camera.name}</span>

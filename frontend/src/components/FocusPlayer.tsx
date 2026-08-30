@@ -15,7 +15,7 @@ export default function FocusPlayer({
 }) {
   if (sentinelId(camera)) {
     return (
-      <div className="relative">
+      <div className="relative h-full min-h-0 w-full">
         <GovPlayer camera={camera} live={live} />
         {alert && <AlertBanner alert={alert} />}
       </div>
@@ -72,7 +72,7 @@ function DemoFocus({
   const snap = alert?.snapshot_url ? snapSrc(alert.snapshot_url) : undefined;
 
   return (
-    <div className="relative aspect-video bg-black rounded overflow-hidden border border-brass-400/80 ring-1 ring-brass-400/40">
+    <div className="relative h-full min-h-[200px] w-full bg-black overflow-hidden border border-brass-400/50">
       {snap ? (
         <img src={snap} alt="" className="absolute inset-0 w-full h-full object-cover opacity-70" />
       ) : (
