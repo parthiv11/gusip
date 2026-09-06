@@ -15,6 +15,7 @@ from app.models.watchlist import WatchlistEntry
 from app.services.event_bus import bus
 from app.services.face import MATCH_THRESHOLD, cosine_score, is_face_embedding
 from app.services.storage import generate_placeholder_snapshot, save_snapshot_png
+from app.services.vision_attrs import class_compatible
 
 
 def alert_fingerprint(watchlist_id: int, camera_id: int) -> str:
@@ -27,18 +28,52 @@ async def load_active_watchlist(db: AsyncSession) -> list[WatchlistEntry]:
     return list(result.scalars())
 
 
+def _match_kind(entry: WatchlistEntry, event: DetectionEvent) -> str:
+    attrs = event.attributes or {}
+    if attrs.get("scene"):
+        return "scene"
+    if entry.entity_type == "person":
+        return "face"
+    if event.plate_normalized:
+        return "plate"
+    return "appearance"
+
+
+def _vehicle_appearance_match(entry: WatchlistEntry, attrs: dict[str, Any]) -> tuple[bool, float]:
+    """Color + class when OCR has no MoRTH plate — designated-vehicle path."""
+    extra = entry.extra or {}
+    want_color = str(extra.get("color") or "").lower().strip()
+    want_class = str(extra.get("vehicle_class") or "").lower().strip()
+    got_color = str(attrs.get("color") or "").lower().strip()
+    got_class = str(attrs.get("vehicle_class") or attrs.get("class_name") or "").lower().strip()
+    if not want_color or got_color in {"", "unknown"} or got_color != want_color:
+        return False, 0.0
+    if not want_class or not class_compatible(want_class, got_class):
+        return False, 0.0
+    if not attrs.get("close", True):
+        return False, 0.0
+    return True, 0.78
+
+
 def match_entry(
     entry: WatchlistEntry,
     plate_norm: str | None,
     attrs: dict[str, Any],
     embedding: list[float] | None = None,
 ) -> tuple[bool, float]:
+    if entry.entity_type == "scene":
+        if attrs.get("scene") == entry.category:
+            return True, float(attrs.get("scene_score") or 0.7)
+        return False, 0.0
     if entry.entity_type == "vehicle" and plate_norm and entry.plate_normalized:
         if plate_norm == entry.plate_normalized:
             return True, 0.97
         # partial plate (common in poor lighting)
         if len(plate_norm) >= 6 and plate_norm[-4:] == entry.plate_normalized[-4:] and plate_norm[:2] == entry.plate_normalized[:2]:
             return True, 0.78
+        return False, 0.0
+    if entry.entity_type == "vehicle" and not plate_norm:
+        return _vehicle_appearance_match(entry, attrs)
     if entry.entity_type == "person":
         if embedding and entry.face_embedding and is_face_embedding(embedding):
             score = cosine_score(embedding, entry.face_embedding)
@@ -116,6 +151,10 @@ def _ws_payload(alert: Alert, entry: WatchlistEntry, camera: Camera, *, coalesce
         "hit_count": _hit_count(extra),
         "coalesced": coalesced,
         "fingerprint": alert_fingerprint(entry.id, camera.id),
+        "match_kind": extra.get("match_kind"),
+        "color": extra.get("color"),
+        "vehicle_class": extra.get("vehicle_class"),
+        "plate_status": extra.get("plate_status"),
     }
 
 
@@ -136,7 +175,10 @@ async def _bump_open_alert(
     extra["source_type"] = camera.source_type
     extra["fingerprint"] = alert_fingerprint(entry.id, camera.id)
     extra["match_score"] = confidence
-    extra["match_kind"] = "face" if entry.entity_type == "person" else "plate"
+    extra["match_kind"] = _match_kind(entry, event)
+    extra["color"] = (event.attributes or {}).get("color")
+    extra["vehicle_class"] = (event.attributes or {}).get("vehicle_class")
+    extra["plate_status"] = (event.attributes or {}).get("plate_status")
     open_row.payload = extra
     flag_modified(open_row, "payload")
     open_row.confidence = max(open_row.confidence, confidence)
@@ -212,7 +254,10 @@ async def maybe_raise_alert(
             "hit_count": 1,
             "fingerprint": alert_fingerprint(entry.id, camera.id),
             "match_score": confidence,
-            "match_kind": "face" if entry.entity_type == "person" else "plate",
+            "match_kind": _match_kind(entry, event),
+            "color": (event.attributes or {}).get("color"),
+            "vehicle_class": (event.attributes or {}).get("vehicle_class"),
+            "plate_status": (event.attributes or {}).get("plate_status"),
         },
     )
     try:

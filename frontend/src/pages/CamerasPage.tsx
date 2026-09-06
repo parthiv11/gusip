@@ -110,13 +110,17 @@ export default function CamerasPage() {
         <h1 className="text-lg font-semibold text-[#F2F4F7]">Camera registry</h1>
         <div className="lg:ml-auto flex flex-wrap items-center gap-2">
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
-          <FilterDropdown value={statusFilter} options={statusOptions} onChange={setStatusFilter} />
-          <FilterDropdown value={cityFilter} options={cityOptions} onChange={setCityFilter} />
-          <FilterDropdown value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
-          <FilterDropdown value={deptFilter} options={departmentOptions} onChange={setDeptFilter} />
+          <FilterDropdown label="Status" value={statusFilter} options={statusOptions} onChange={setStatusFilter} />
+          <FilterDropdown label="City" value={cityFilter} options={cityOptions} onChange={setCityFilter} />
+          <FilterDropdown label="Source" value={sourceFilter} options={sourceOptions} onChange={setSourceFilter} />
+          <FilterDropdown label="Department" value={deptFilter} options={departmentOptions} onChange={setDeptFilter} />
         </div>
       </div>
-      {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
+      {error && (
+        <div className="text-red-400 text-xs mb-2" role="alert">
+          {error}
+        </div>
+      )}
       <CameraTable
         groups={groups}
         expandedCities={expandedCities}

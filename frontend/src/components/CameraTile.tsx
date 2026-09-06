@@ -44,7 +44,10 @@ export default function CameraTile({
 
   return (
     <button
+      type="button"
       onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`${camera.code} ${camera.address || camera.name}${selected ? ", selected" : ""}`}
       className={`relative aspect-video rounded overflow-hidden border text-left ${
         selected ? "border-brass-400 ring-1 ring-brass-400" : "border-white/10"
       }`}
@@ -53,14 +56,21 @@ export default function CameraTile({
         <img
           src={preview}
           alt=""
+          aria-hidden
           className="absolute inset-0 w-full h-full object-cover opacity-80"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
       ) : (
-        <div
-          className="absolute inset-0"
+        <video
+          src="/api/v1/feeds/demo/loop"
+          muted
+          loop
+          playsInline
+          autoPlay
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover opacity-80"
           style={{
             background: `radial-gradient(circle at 30% 20%, hsl(${hue} 20% 18%), #070b12)`,
           }}
@@ -69,7 +79,7 @@ export default function CameraTile({
       <div className="absolute inset-0 opacity-30 scanlines pointer-events-none" />
       <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-black/60 to-transparent px-2 flex items-center justify-between text-[10px] font-mono">
         <span className="flex items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${camera.status === "online" ? "bg-emerald-400 live-dot" : "bg-red-500"}`} />
+          <span className={`h-1.5 w-1.5 rounded-full ${camera.status === "online" ? "bg-emerald-400 live-dot" : "bg-red-500"}`} aria-hidden />
           {camera.code}
         </span>
         <span className={`px-1.5 py-0.5 rounded ${SOURCE_COLOR[camera.source_type] ?? "bg-white/10"}`}>
@@ -88,8 +98,10 @@ export default function CameraTile({
           }}
         >
           <div className="absolute -top-4 left-0 text-[9px] font-mono text-brass-400 whitespace-nowrap">
+            {typeof live.attributes?.color === "string" ? `${live.attributes.color} ` : ""}
             {live.object_type}
-            {live.plate ? ` · ${live.plate}` : ""} {Math.round(live.confidence * 100)}%
+            {live.plate ? ` · ${live.plate}` : live.attributes?.plate_status === "unreadable" ? " · no plate" : ""}{" "}
+            {Math.round(live.confidence * 100)}%
           </div>
         </div>
       )}

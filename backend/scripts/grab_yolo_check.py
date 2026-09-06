@@ -38,7 +38,7 @@ async def grab_one(cam: Camera) -> dict:
     src = ""
     burst: list[tuple[bytes, float | None]] = []
     for url in urls:
-        burst = await asyncio.to_thread(_grab_frame_burst, url, 5)
+        burst = await asyncio.to_thread(_grab_frame_burst, url, 8)
         if burst:
             jpeg, pts = burst[-1]
             src = url

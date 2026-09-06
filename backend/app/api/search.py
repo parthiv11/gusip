@@ -15,8 +15,9 @@ from app.models.camera import Camera
 from app.models.event import DetectionEvent, TrackPoint
 from app.models.user import User
 from app.models.watchlist import WatchlistEntry
-from app.schemas.common import EventOut, FaceSearchOut, FaceWatchlistHit, SearchQuery, TrackPointOut
+from app.schemas.common import AppearanceSearchOut, EventOut, FaceSearchOut, FaceWatchlistHit, SearchQuery, TrackPointOut
 from app.services.face import MATCH_THRESHOLD, FaceEngineError, cosine_score, embed_image_bytes, is_face_embedding
+from app.services.vision_attrs import class_compatible
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -198,6 +199,54 @@ async def plate_route(
     )
     await db.commit()
     return out
+
+
+@router.get("/appearance", response_model=AppearanceSearchOut)
+async def appearance_route(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(require_capability("search"))],
+    purpose: Annotated[str, Query()],
+    color: Annotated[str, Query()] = "white",
+    vehicle_class: Annotated[str, Query()] = "suv",
+    limit: Annotated[int, Query()] = 80,
+):
+    """Designated-vehicle trail when the plate is unreadable (night PTZ)."""
+    purpose = validate_purpose(purpose)
+    scoped_to = await department_scope(user)
+    color_n = color.lower().strip()
+    class_n = vehicle_class.lower().strip()
+    q = select(DetectionEvent).where(DetectionEvent.object_type.in_(("vehicle", "two-wheeler")))
+    q = _apply_dept_scope(q, scoped_to)
+    q = q.where(DetectionEvent.attributes["color"].astext == color_n)
+    rows = list((await db.execute(q.order_by(DetectionEvent.timestamp.desc()).limit(limit))).scalars())
+    rows = [
+        ev
+        for ev in rows
+        if class_compatible(class_n, str((ev.attributes or {}).get("vehicle_class") or (ev.attributes or {}).get("class_name") or ""))
+    ]
+    gid = None
+    for ev in rows:
+        if ev.global_track_id:
+            gid = ev.global_track_id
+            break
+    track = await _track_points(db, gid, scoped_to) if gid else []
+    await _audit_search(
+        db,
+        user,
+        request,
+        "search_appearance",
+        "search/appearance",
+        {"purpose": purpose, "color": color_n, "vehicle_class": class_n, "hits": len(rows)},
+    )
+    await db.commit()
+    return AppearanceSearchOut(
+        color=color_n,
+        vehicle_class=class_n,
+        events=rows[:50],
+        track=track,
+        global_track_id=gid,
+    )
 
 
 async def _track_points(

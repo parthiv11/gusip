@@ -5,6 +5,7 @@ from app.models.event import Alert, DetectionEvent, TrackPoint
 from app.models.ingest import IngestReceipt
 from app.models.user import User
 from app.models.watchlist import WatchlistEntry
+from app.models.role import Role
 
 __all__ = [
     "AuditLog",
@@ -18,4 +19,5 @@ __all__ = [
     "IngestReceipt",
     "User",
     "WatchlistEntry",
+    "Role",
 ]

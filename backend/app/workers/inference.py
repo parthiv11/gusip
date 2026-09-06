@@ -19,7 +19,9 @@ from app.db import SessionLocal
 from app.models.camera import Camera
 from app.services.byte_track import tracker_for
 from app.services.pipeline import ingest_detection
+from app.services.scene import analyze_scene
 from app.services.storage import DATA_DIR
+from app.services.vision_attrs import enrich_detection
 
 log = logging.getLogger("gusip.yolo")
 settings = get_settings()
@@ -119,9 +121,18 @@ async def emit_detections(
     timestamp: datetime | None = None,
     stream_epoch: int | None = None,
     stream_pts: float | None = None,
+    plate_status: str = "unknown",
 ) -> int:
     if not dets:
         return 0
+    ranked = sorted(
+        dets,
+        key=lambda d: max(1.0, float(d.get("x2", 0)) - float(d.get("x1", 0)))
+        * max(1.0, float(d.get("y2", 0)) - float(d.get("y1", 0))),
+        reverse=True,
+    )
+    for d in ranked:
+        enrich_detection(jpeg, d, plate_status=plate_status)
     snap_url = None
     if jpeg:
         try:
@@ -135,11 +146,38 @@ async def emit_detections(
             snap_url = None
     n = 0
     async with SessionLocal() as db:
-        for d in dets:
+        for scene in analyze_scene(ranked):
+            scene_attrs = {
+                "source_type": cam.source_type,
+                "model": "yolov8n",
+                "stream_epoch": stream_epoch,
+                "stream_pts": stream_pts,
+                **(scene.get("attributes") or {}),
+            }
+            await ingest_detection(
+                db,
+                {
+                    "camera_id": cam.id,
+                    "event_type": scene["event_type"],
+                    "object_type": scene["object_type"],
+                    "timestamp": timestamp,
+                    "confidence": scene["confidence"],
+                    "local_track_id": scene.get("local_track_id"),
+                    "bbox": scene.get("bbox") or {},
+                    "snapshot_url": snap_url,
+                    "attributes": scene_attrs,
+                },
+            )
+            n += 1
+        for d in reversed(ranked):
             attrs: dict[str, Any] = {
                 "source_type": cam.source_type,
                 "model": "yolov8n",
                 "class_name": d.get("class_name"),
+                "color": d.get("color"),
+                "vehicle_class": d.get("vehicle_class"),
+                "close": d.get("close"),
+                "plate_status": d.get("plate_status") or plate_status,
                 "stream_epoch": stream_epoch,
                 "stream_pts": stream_pts,
             }

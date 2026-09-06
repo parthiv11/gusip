@@ -1,8 +1,4 @@
-export type Role =
-  | "system_admin"
-  | "control_room_operator"
-  | "investigation_officer"
-  | "department_coordinator";
+export type Role = string;
 
 export interface BreakGlass {
   active: boolean;

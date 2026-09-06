@@ -148,6 +148,39 @@ WATCHLIST = [
     },
 ]
 
+SCENE_WATCHLIST = [
+    {
+        "entity_type": "scene",
+        "category": "crowding",
+        "plate_number": None,
+        "name": "Crowding",
+        "description": "High person/vehicle density on a night PTZ still. No plate required.",
+        "appearance_notes": None,
+        "extra": {"sim_tag": "scene-crowding", "system": True},
+        "priority": "medium",
+    },
+    {
+        "entity_type": "scene",
+        "category": "stopped_vehicle",
+        "plate_number": None,
+        "name": "Stopped vehicle",
+        "description": "Same close vehicle dwells across Sentinel samples (lights / obstruction).",
+        "appearance_notes": None,
+        "extra": {"sim_tag": "scene-stopped", "system": True},
+        "priority": "medium",
+    },
+    {
+        "entity_type": "scene",
+        "category": "wrong_way",
+        "plate_number": None,
+        "name": "Against traffic",
+        "description": "Close vehicle moving opposite the median flow in the same frame.",
+        "appearance_notes": None,
+        "extra": {"sim_tag": "scene-wrong-way", "system": True},
+        "priority": "high",
+    },
+]
+
 FACE_TAGS = {"wanted-rakesh", "wanted-kiran", "missing-mehta"}
 
 USERS = [
@@ -227,8 +260,9 @@ async def seed() -> None:
 
         existing = list((await db.execute(select(WatchlistEntry))).scalars())
         tags = {(row.extra or {}).get("sim_tag") for row in existing}
+        catalog = WATCHLIST + SCENE_WATCHLIST
         if not existing:
-            for item in WATCHLIST:
+            for item in catalog:
                 extra = dict(item.get("extra") or {})
                 tag = extra.get("sim_tag")
                 face = canned_embedding(tag) if tag in FACE_TAGS else None
@@ -244,7 +278,7 @@ async def seed() -> None:
                     )
                 )
         else:
-            by_tag = {item["extra"].get("sim_tag"): item for item in WATCHLIST if item.get("extra")}
+            by_tag = {item["extra"].get("sim_tag"): item for item in catalog if item.get("extra")}
             for tag, item in by_tag.items():
                 if tag and tag not in tags:
                     extra = dict(item.get("extra") or {})
@@ -277,6 +311,9 @@ async def seed() -> None:
                     row.extra = extra
                     flag_modified(row, "extra")
 
+        from app.services.iam import ensure_builtin_roles
+
+        await ensure_builtin_roles(db)
         await db.commit()
         print("GUSIP seed complete: departments, 50 cameras, users, watchlist.")
 

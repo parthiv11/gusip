@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.break_glass import department_scope, get_grant, grant_break_glass, revoke_break_glass
-from app.core.policy import PURPOSES, capabilities_for, has_capability
+from app.core.policy import PURPOSES, capabilities_for, has_capability, known_role_slugs
 from app.core.security import (
     client_ip,
     create_access_token,
@@ -306,12 +306,18 @@ async def create_user(
 ):
     if not has_capability(admin, "create_user"):
         raise HTTPException(status_code=403, detail="Admin only")
+    from app.services.iam import refresh_role_cache
+
+    await refresh_role_cache(db)
+    role = payload.get("role", "control_room_operator")
+    if role not in known_role_slugs():
+        raise HTTPException(status_code=400, detail=f"Unknown role '{role}'")
     user = User(
         username=payload["username"],
         full_name=payload.get("full_name", payload["username"]),
         email=payload["email"],
         hashed_password=hash_password(payload["password"]),
-        role=payload.get("role", "control_room_operator"),
+        role=role,
         department_id=payload.get("department_id"),
         is_active=True,
         created_at=datetime.now(timezone.utc),

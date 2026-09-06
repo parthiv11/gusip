@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { AlertCard, OperationalAlert } from "./AlertCard";
 
@@ -22,13 +23,13 @@ export const AlertInbox: React.FC<AlertInboxProps> = ({
         <h2 className="text-base font-bold text-[#D9A441] tracking-wide">
           Alert Inbox
         </h2>
-        <a
-          href="/search"
+        <Link
+          to="/search?mode=plate"
           className="text-xs text-[#D9A441] hover:text-[#E8B858] flex items-center gap-1 font-medium transition-colors"
         >
           <span>Investigate</span>
-          <ExternalLink size={12} />
-        </a>
+          <ExternalLink size={12} aria-hidden />
+        </Link>
       </div>
 
       {/* Focus Subtitle */}

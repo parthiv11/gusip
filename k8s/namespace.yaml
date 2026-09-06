@@ -108,5 +108,5 @@ data:
   SENTINEL_ANPR_ENABLED: "true"
   SENTINEL_ANPR_INTERVAL_S: "8"
   SENTINEL_RTSP_ENABLED: "true"
-  SENTINEL_ALLOWED_HOSTS: live.sentinelgujarat.in,live.corp8.cloud
+  SENTINEL_ALLOWED_HOSTS: live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud
   OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp

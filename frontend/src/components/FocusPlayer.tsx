@@ -31,17 +31,20 @@ function hitCount(alert?: Alert | null): number {
 
 function AlertBanner({ alert }: { alert: Alert }) {
   const n = hitCount(alert);
+  const kind = String(alert.payload?.match_kind || "");
+  const unread = alert.payload?.plate_status === "unreadable" || kind === "appearance";
+  const label = unread ? "appearance · plate unreadable" : (alert.watchlist?.category || "watchlist").replaceAll("_", " ");
   return (
     <div className="absolute top-2 right-2 z-10 max-w-[70%] text-right">
       <div className="inline-flex items-center gap-1.5 bg-yellow-400 text-ink-950 text-[11px] font-bold uppercase tracking-wide px-2 py-1 rounded">
         <span className="min-w-[1.25rem] h-4 grid place-items-center rounded-full bg-ink-950 text-yellow-400 text-[10px] normal-case">
           {n}
         </span>
-        {(alert.watchlist?.category || "watchlist").replaceAll("_", " ")}
+        {label}
       </div>
       <div className="text-[11px] text-white/90 mt-1 bg-black/55 px-2 py-0.5 rounded font-mono">
         {alert.watchlist?.name}
-        {alert.watchlist?.plate_number ? ` · ${alert.watchlist.plate_number}` : ""}
+        {alert.watchlist?.plate_number ? ` · ${alert.watchlist.plate_number}` : unread ? " · no plate" : ""}
       </div>
     </div>
   );
@@ -76,8 +79,13 @@ function DemoFocus({
       {snap ? (
         <img src={snap} alt="" className="absolute inset-0 w-full h-full object-cover opacity-70" />
       ) : (
-        <div
-          className="absolute inset-0"
+        <video
+          className="absolute inset-0 w-full h-full object-cover opacity-70"
+          src="/api/v1/feeds/demo/loop"
+          muted
+          loop
+          playsInline
+          autoPlay
           style={{ background: `radial-gradient(circle at 30% 20%, hsl(${hue} 20% 18%), #070b12)` }}
         />
       )}

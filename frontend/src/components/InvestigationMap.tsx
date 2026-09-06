@@ -7,6 +7,7 @@ import {
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
+import { useTheme } from "../theme";
 
 // Coordinate definition for the 5 investigation checkpoints
 export interface InvestigationPoint {
@@ -244,6 +245,7 @@ export default function InvestigationMap({
   selectedEventId,
   onSelectEvent,
 }: InvestigationMapProps) {
+  const [theme] = useTheme();
   const polylineCoords = useMemo(
     () => points.map((p) => [p.lat, p.lng] as [number, number]),
     [points]
@@ -252,7 +254,7 @@ export default function InvestigationMap({
   const arrowPositions = useMemo(() => calculateArrowPositions(points), [points]);
 
   return (
-    <div className="relative w-full h-full bg-[#0B0D10] overflow-hidden select-none">
+    <div className="relative w-full h-full bg-ink-950 overflow-hidden select-none">
       <MapContainer
         center={[23.16, 72.58]}
         zoom={10}
@@ -264,7 +266,8 @@ export default function InvestigationMap({
         className="w-full h-full"
       >
         <TileLayer
-          className="dark-gis-tiles"
+          key={theme}
+          className={theme === "dark" ? "dark-gis-tiles" : undefined}
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           subdomains="abc"
           maxZoom={19}

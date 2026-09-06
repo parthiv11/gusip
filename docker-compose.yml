@@ -69,7 +69,7 @@ services:
 
   evidence-init:
     image: alpine:3.20
-    command: ["sh", "-c", "mkdir -p /data/snapshots /data/clips /data/previews && chown -R 10001:10001 /data"]
+    command: ["sh", "-c", "mkdir -p /data/snapshots /data/clips /data/previews /data/loops && chown -R 10001:10001 /data"]
     user: "0:0"
     volumes:
       - evidence_data:/data
@@ -99,7 +99,7 @@ services:
       SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
       SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
       SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
-      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud}
       SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
       SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
       OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
@@ -156,7 +156,7 @@ services:
       SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
       SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
       SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
-      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud}
       SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
       SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
       SENTINEL_LOCAL_RTSP_URL: ${SENTINEL_LOCAL_RTSP_URL:-rtsp://mediamtx:8554}

@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     sentinel_anpr_enabled: bool = True
     sentinel_anpr_interval_s: float = 10.0
     sentinel_rtsp_enabled: bool = True
-    sentinel_allowed_hosts: str = "live.sentinelgujarat.in,live.corp8.cloud"
+    sentinel_allowed_hosts: str = "live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud"
     sentinel_user_agent: str = "Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)"
     sentinel_referer: str = "https://sentinel.gujarat.gov.in/resource"
     # Internal MediaMTX that republishes catalogue HLS as RTSP when :8554 is not on the public host.

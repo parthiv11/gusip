@@ -17,6 +17,7 @@ interface FilterDropdownProps {
 }
 
 export const FilterDropdown: React.FC<FilterDropdownProps> = ({
+  label,
   value,
   options,
   onChange,
@@ -24,6 +25,8 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find((o) => o.value === value) || options[0];
+  const name = label || selectedOption?.label || "Filter";
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -34,16 +37,24 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
         setOpen(false);
       }
     }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, []);
-
-  const selectedOption = options.find((o) => o.value === value) || options[0];
 
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
       <button
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={name}
         onClick={() => setOpen(!open)}
         className={`h-[34px] bg-[#0D1219] hover:bg-[#101620] text-[#F2F4F7] text-[13px] px-3 rounded-[6px] border border-white/[0.09] flex items-center gap-2 transition-colors ${
           open ? "border-[#D9A441]/50 bg-[#101620]" : ""
@@ -58,13 +69,15 @@ export const FilterDropdown: React.FC<FilterDropdownProps> = ({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-1.5 min-w-[170px] bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
+        <div role="listbox" aria-label={name} className="absolute right-0 mt-1.5 min-w-[170px] bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
           {options.map((opt) => {
             const isSelected = opt.value === value;
             return (
               <button
                 key={opt.value}
                 type="button"
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => {
                   onChange(opt.value);
                   setOpen(false);

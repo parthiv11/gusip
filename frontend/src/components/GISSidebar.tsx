@@ -46,7 +46,7 @@ export default function GISSidebar({
   };
 
   return (
-    <aside className="w-full lg:w-[380px] shrink-0 h-full bg-[#080C14] border-t lg:border-t-0 lg:border-l border-white/[0.08] p-5 flex flex-col min-h-0 select-none overflow-hidden">
+    <aside className="w-full lg:w-[380px] shrink-0 h-full bg-[#080C14] border-t lg:border-t-0 lg:border-l border-white/[0.08] p-5 flex flex-col min-h-0 select-none overflow-hidden" aria-label="GIS filters and coverage">
       {/* 1. FILTERS SECTION */}
       <div className="shrink-0">
         <h2 className="text-[13px] font-semibold tracking-wide text-[#D9A441] uppercase mb-3">
@@ -55,7 +55,11 @@ export default function GISSidebar({
         <div className="space-y-2.5">
           {/* Status Dropdown */}
           <div className="relative">
+            <label htmlFor="gis-status" className="sr-only">
+              Camera status
+            </label>
             <select
+              id="gis-status"
               value={statusFilter}
               onChange={(e) => onStatusFilterChange(e.target.value)}
               className="w-full h-[40px] bg-[#10151D] border border-white/[0.08] hover:border-white/20 focus:border-[#D9A441]/50 rounded-[4px] px-3.5 pr-9 text-[13px] text-[#F2F4F7] font-medium appearance-none focus:outline-none cursor-pointer transition-colors"
@@ -72,7 +76,11 @@ export default function GISSidebar({
 
           {/* Department Dropdown */}
           <div className="relative">
+            <label htmlFor="gis-dept" className="sr-only">
+              Department
+            </label>
             <select
+              id="gis-dept"
               value={deptFilter}
               onChange={(e) => onDeptFilterChange(e.target.value)}
               className="w-full h-[40px] bg-[#10151D] border border-white/[0.08] hover:border-white/20 focus:border-[#D9A441]/50 rounded-[4px] px-3.5 pr-9 text-[13px] text-[#F2F4F7] font-medium appearance-none focus:outline-none cursor-pointer transition-colors"
@@ -152,10 +160,12 @@ export default function GISSidebar({
             const isSelected = selectedCityName === item.city;
             const pct = Math.min(100, Math.round((item.current / item.target) * 100));
             return (
-              <div
+              <button
                 key={item.city}
+                type="button"
                 onClick={() => onSelectCity(item)}
-                className={`group p-2.5 rounded-[4px] bg-[#10151D]/60 hover:bg-[#131923] border cursor-pointer transition-all duration-150 ${
+                aria-pressed={isSelected}
+                className={`w-full text-left group p-2.5 rounded-[4px] bg-[#10151D]/60 hover:bg-[#131923] border cursor-pointer transition-all duration-150 ${
                   isSelected
                     ? "border-[#D9A441] bg-[#131923] shadow-[0_0_12px_rgba(217,164,65,0.15)]"
                     : "border-white/[0.04] hover:border-white/15"
@@ -182,7 +192,7 @@ export default function GISSidebar({
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

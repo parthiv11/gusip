@@ -257,6 +257,14 @@ class FaceSearchOut(BaseModel):
     global_track_id: str | None = None
 
 
+class AppearanceSearchOut(BaseModel):
+    color: str | None = None
+    vehicle_class: str | None = None
+    events: list[EventOut]
+    track: list[TrackPointOut]
+    global_track_id: str | None = None
+
+
 class GapZone(BaseModel):
     city: str
     camera_count: int

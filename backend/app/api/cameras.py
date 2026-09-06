@@ -1,7 +1,7 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -45,7 +45,7 @@ async def list_cameras(
         assert_department_allowed(user, department_id, scoped_to)
         q = q.where(Camera.department_id == department_id)
     elif scoped_to:
-        q = q.where(Camera.department_id == scoped_to)
+        q = q.where(or_(Camera.department_id == scoped_to, Camera.source_type == "sentinel"))
     if status:
         q = q.where(Camera.status == status)
     if source_type:
@@ -84,7 +84,8 @@ async def get_camera(
     if not cam:
         raise HTTPException(404, "Camera not found")
     scoped_to = await department_scope(user)
-    assert_department_allowed(user, cam.department_id, scoped_to)
+    if cam.source_type != "sentinel":
+        assert_department_allowed(user, cam.department_id, scoped_to)
     await write_audit(
         db,
         user_id=user.id,

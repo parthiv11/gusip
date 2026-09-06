@@ -56,10 +56,15 @@ export default function WatchlistPage() {
       <p className="text-[11px] text-[#667085] mb-4">
         Enroll an adult still (ArcFace / buffalo_l). Face search is purpose-logged and runs on own/demo cameras, not official Sentinel street feeds.
       </p>
-      {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
+        {error && (
+          <div className="text-red-400 text-xs mb-2" role="alert">
+            {error}
+          </div>
+        )}
       {can("watchlist_write") ? (
         <form onSubmit={add} className="flex flex-col sm:flex-row gap-2 mb-6 text-sm">
           <select
+            aria-label="Watchlist category"
             className="bg-[#11151C] border border-white/10 rounded px-2 py-2 text-[#F2F4F7]"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -71,12 +76,14 @@ export default function WatchlistPage() {
           </select>
           <input
             placeholder="Plate"
+            aria-label="Plate"
             className="bg-[#11151C] border border-white/10 rounded px-2 py-1 font-mono text-[#F2F4F7]"
             value={plate}
             onChange={(e) => setPlate(e.target.value)}
           />
           <input
             placeholder="Name / description"
+            aria-label="Name or description"
             className="bg-[#11151C] border border-white/10 rounded px-2 py-1 flex-1 text-[#F2F4F7]"
             value={name}
             onChange={(e) => setName(e.target.value)}

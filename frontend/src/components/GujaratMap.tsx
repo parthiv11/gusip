@@ -2,6 +2,7 @@ import { MapContainer, Marker, Popup, TileLayer, Circle, Polyline, useMap } from
 import L from "leaflet";
 import { useEffect } from "react";
 import { snapSrc } from "../api/media";
+import { useTheme } from "../theme";
 import type { Alert, Camera, TrackPoint } from "../types";
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: string })._getIconUrl;
@@ -82,13 +83,15 @@ export default function GujaratMap({
   alerts?: Alert[];
   onAlertClick?: (a: Alert) => void;
 }) {
+  const [theme] = useTheme();
   const openAlerts = (alerts || []).filter((a) => a.status === "new");
   const seen = new Map<string, number>();
 
   return (
     <MapContainer center={[22.8, 71.8]} zoom={7} className="h-full w-full rounded" scrollWheelZoom>
       <TileLayer
-        className="dark-gis-tiles"
+        key={theme}
+        className={theme === "dark" ? "dark-gis-tiles" : undefined}
         attribution="&copy; OpenStreetMap"
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         subdomains="abc"

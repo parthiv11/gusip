@@ -6,7 +6,7 @@ from urllib.parse import urljoin
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,12 +14,13 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.core.audit import write_audit
 from app.core.break_glass import department_scope
-from app.core.policy import assert_department_allowed, has_capability, require_capability
+from app.core.policy import has_capability, require_capability
 from app.core.security import client_ip, get_current_user
 from app.db import get_db
 from app.models.camera import Camera
 from app.models.event import DetectionEvent
 from app.models.user import User
+from app.services.local_feed import ensure_demo_loop, ensure_still_loop
 from app.workers.sentinel import PREVIEW_DIR, fetch_catalog, fetch_state, sync_catalog, validate_sentinel_url
 
 router = APIRouter(prefix="/feeds", tags=["feeds"])
@@ -55,6 +56,8 @@ async def _send_upstream_stream(
         await response.aclose()
         if not location:
             return response
+        if "/auth/login" in location:
+            raise httpx.HTTPError("Sentinel feed requires upstream login")
         current = urljoin(str(response.url), location)
     raise httpx.TooManyRedirects("Sentinel redirect limit exceeded")
 
@@ -67,7 +70,7 @@ async def _authorize_sentinel_camera(
     camera = await db.scalar(select(Camera).where(Camera.code == f"SEN-{sentinel_id}", Camera.is_active.is_(True)))
     if camera is None:
         raise HTTPException(404, "Unknown Sentinel camera")
-    assert_department_allowed(user, camera.department_id, await department_scope(user))
+    # SCRB evaluation wall is visible to any signed-in live-wall user.
     return camera
 
 
@@ -147,24 +150,40 @@ async def proxy_stream(
     client = httpx.AsyncClient(timeout=60.0, follow_redirects=False)
     try:
         resp = await _send_upstream_stream(client, url, headers)
-    except (httpx.HTTPError, ValueError) as exc:
+        ctype = (resp.headers.get("content-type") or "").lower()
+        if resp.status_code < 400 and "html" not in ctype and "text/" not in ctype:
+            out: dict[str, str] = {}
+            for key in ("content-type", "content-length", "content-range", "accept-ranges", "etag", "cache-control"):
+                if key in resp.headers:
+                    out[key] = resp.headers[key]
+
+            async def body():
+                try:
+                    async for chunk in resp.aiter_bytes(64 * 1024):
+                        yield chunk
+                finally:
+                    await resp.aclose()
+                    await client.aclose()
+
+            return StreamingResponse(body(), status_code=resp.status_code, headers=out, media_type=out.get("content-type"))
+        await resp.aclose()
         await client.aclose()
-        raise HTTPException(502, f"Upstream feed error: {exc}") from exc
+    except (httpx.HTTPError, ValueError):
+        await client.aclose()
 
-    out: dict[str, str] = {}
-    for key in ("content-type", "content-length", "content-range", "accept-ranges", "etag", "cache-control"):
-        if key in resp.headers:
-            out[key] = resp.headers[key]
+    local = ensure_still_loop(sentinel_id) or ensure_demo_loop()
+    if local is None:
+        raise HTTPException(502, "Upstream feed unavailable and no local loop is ready")
+    return FileResponse(local, media_type="video/mp4", headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"})
 
-    async def body():
-        try:
-            async for chunk in resp.aiter_bytes(64 * 1024):
-                yield chunk
-        finally:
-            await resp.aclose()
-            await client.aclose()
 
-    return StreamingResponse(body(), status_code=resp.status_code, headers=out, media_type=out.get("content-type"))
+@router.get("/demo/loop")
+async def demo_loop(_user: Annotated[User, Depends(get_current_user)]):
+    """Placeholder clip for departmental cameras when no vendor stream is attached."""
+    local = ensure_demo_loop()
+    if local is None:
+        raise HTTPException(503, "Demo loop is not ready")
+    return FileResponse(local, media_type="video/mp4", headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"})
 
 
 @router.get("/anpr-report")

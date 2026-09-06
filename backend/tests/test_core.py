@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import uuid4
 import time
@@ -87,6 +88,25 @@ def test_ingest_envelope_forbids_adapter_media_urls():
         DetectionEnvelope.model_validate(payload)
 
 
+def test_sentinel_allowlist_includes_cctv_redirect_host(monkeypatch):
+    from app.config import Settings
+    from app.workers import sentinel as sen
+
+    default_hosts = Settings.model_fields["sentinel_allowed_hosts"].default
+    assert "cctv.corp8.cloud" in default_hosts
+    fresh = Settings(_env_file=None, sentinel_allowed_hosts=default_hosts)
+    monkeypatch.setattr(sen, "settings", fresh)
+    assert sen.validate_sentinel_url("https://cctv.corp8.cloud/stream/1") == "https://cctv.corp8.cloud/stream/1"
+
+
+def test_still_loop_requires_preview_jpeg(tmp_path, monkeypatch):
+    from app.services import local_feed
+
+    monkeypatch.setattr(local_feed, "PREVIEW_DIR", tmp_path)
+    monkeypatch.setattr(local_feed, "LOOP_DIR", tmp_path / "loops")
+    assert local_feed.ensure_still_loop("1") is None
+
+
 def test_sentinel_catalogue_redacts_upstream_media_urls():
     from app.api.feeds import _public_catalogue_camera
 
@@ -148,10 +168,44 @@ def test_enhance_and_fuse_low_res_crops():
     assert fused.shape[0] >= 8 and fused.shape[1] >= 16
 
 
+def test_plate_box_rejects_square_glare():
+    from app.services.plate_ocr import _looks_like_indian_plate
+
+    assert not _looks_like_indian_plate(0, 0, 20, 19, 1080)
+    assert not _looks_like_indian_plate(10, 10, 80, 70, 1080)
+    assert not _looks_like_indian_plate(0, 700, 327, 794, 1080)
+    assert _looks_like_indian_plate(400, 800, 490, 828, 1080)
+
+
 def test_read_plate_text_skips_empty_crops():
     from app.services.plate_ocr import read_plate_text
 
     assert read_plate_text(b"", []) == ""
+    tiny = Image.new("L", (16, 8), 180)
+    assert read_plate_text(b"", extra_crops=[tiny]) == ""
+
+
+def test_ocrable_crop_rejects_bumper_and_cjk():
+    from app.services.plate_ocr import (
+        _contour_plate_xyxy,
+        _is_ocrable_plate_crop,
+        _latin_ocr_keep,
+    )
+
+    assert not _is_ocrable_plate_crop(Image.new("RGB", (824, 122), 180))
+    assert not _is_ocrable_plate_crop(Image.new("RGB", (16, 8), 180))
+    assert _is_ocrable_plate_crop(Image.new("RGB", (71, 33), 180))
+    assert _latin_ocr_keep("一 一") == ""
+    assert _latin_ocr_keep("1 S SS SS") == ""
+    assert "山" not in _latin_ocr_keep("M 山 P 1 1 B J")
+    assert _latin_ocr_keep("GJ 01 ST 0001") == "GJ 01 ST 0001"
+    bumper = np.full((80, 240, 3), 18, dtype=np.uint8)
+    bumper[28:48, 70:190] = 230
+    boxes = _contour_plate_xyxy(bumper)
+    assert boxes
+    w = boxes[0][2] - boxes[0][0]
+    h = boxes[0][3] - boxes[0][1]
+    assert 80 <= w <= 140 and 12 <= h <= 36
 
 
 def test_watchlist_exact_and_partial():
@@ -168,6 +222,38 @@ def test_watchlist_exact_and_partial():
     assert ok2 and conf2 < 0.9
     no, _ = match_entry(entry, "MH12AB1234", {})
     assert not no
+
+
+def test_watchlist_appearance_when_plate_unreadable():
+    from app.services.matching import match_entry
+    from app.services.scene import analyze_scene
+    from app.services.vision_attrs import class_compatible, estimate_color, is_close_vehicle
+
+    entry = WatchlistEntry(
+        entity_type="vehicle",
+        category="stolen_vehicle",
+        plate_normalized="GJ01ST0001",
+        name="Fortuner",
+        extra={"color": "white", "vehicle_class": "suv"},
+    )
+    miss, _ = match_entry(entry, None, {"color": "white", "vehicle_class": "car", "close": False})
+    assert not miss
+    ok, conf = match_entry(entry, None, {"color": "white", "vehicle_class": "car", "close": True})
+    assert ok and 0.7 <= conf < 0.9
+    no, _ = match_entry(entry, None, {"color": "yellow", "vehicle_class": "car", "close": True})
+    assert not no
+    crowd = analyze_scene([{"object_type": "person"}] * 6)
+    assert any(s["event_type"] == "crowding" for s in crowd)
+    assert class_compatible("suv", "car")
+    assert not class_compatible("suv", "bus")
+    img = Image.new("RGB", (80, 50), (230, 230, 228))
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg = buf.getvalue()
+    det = {"x1": 0, "y1": 0, "x2": 80, "y2": 50, "object_type": "vehicle", "frame_h": 50}
+    assert estimate_color(jpeg, det) == "white"
+    det_far = {"object_type": "vehicle", "x1": 0, "y1": 0, "x2": 40, "y2": 20, "frame_h": 1080}
+    assert not is_close_vehicle(det_far)
 
 
 def test_coalesce_consecutive_same_camera_hops():
@@ -270,6 +356,54 @@ def test_coordinator_is_home_scoped():
     assert is_home_scoped(coord)
     assert has_capability(coord, "break_glass")
     assert has_capability(coord, "export")
+
+
+def test_system_admin_is_super_admin():
+    admin = SimpleNamespace(role="system_admin", department_id=None)
+    assert has_capability(admin, "manage_roles")
+    assert has_capability(admin, "create_user")
+    assert "manage_roles" in capabilities_for("system_admin")
+    assert not is_home_scoped(admin)
+
+
+def test_custom_role_strips_privileged_caps_and_stays_home_scoped():
+    from app.core.policy import register_custom_roles, sanitize_caps
+
+    class Row:
+        slug = "night_lead"
+        name = "Night lead"
+        capabilities = ["view_live", "ack_alert", "manage_roles", "create_user"]
+        statewide = False
+
+    register_custom_roles([Row()])
+    try:
+        assert "manage_roles" not in sanitize_caps(["view_live", "manage_roles"])
+        assert "view_live" in capabilities_for("night_lead")
+        assert "manage_roles" not in capabilities_for("night_lead")
+        user = SimpleNamespace(role="night_lead", department_id=1)
+        assert has_capability(user, "ack_alert")
+        assert not has_capability(user, "manage_roles")
+        assert is_home_scoped(user)
+    finally:
+        register_custom_roles([])
+
+
+def test_custom_statewide_role_is_not_home_scoped():
+    from app.core.policy import register_custom_roles
+
+    class Row:
+        slug = "state_desk"
+        name = "State desk"
+        capabilities = ["search", "export"]
+        statewide = True
+
+    register_custom_roles([Row()])
+    try:
+        user = SimpleNamespace(role="state_desk", department_id=2)
+        assert "statewide" in capabilities_for("state_desk")
+        assert not is_home_scoped(user)
+    finally:
+        register_custom_roles([])
 
 
 def test_purpose_required():

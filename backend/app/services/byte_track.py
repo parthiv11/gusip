@@ -50,12 +50,22 @@ class CameraTracker:
                 if ti not in unmatched_tracks or di not in unmatched_dets:
                     continue
                 track = self.tracks[ti]
-                _, bbox, score = boxes[di]
+                det, bbox, score = boxes[di]
+                old = track.bbox
+                iou = _iou(old, bbox)
+                ocx = (old[0] + old[2]) / 2.0
+                ncx = (bbox[0] + bbox[2]) / 2.0
+                ocy = (old[1] + old[3]) / 2.0
+                ncy = (bbox[1] + bbox[3]) / 2.0
                 track.bbox = bbox
                 track.score = score
                 track.misses = 0
                 track.hits += 1
-                boxes[di][0]["local_track_id"] = str(track.track_id)
+                det["local_track_id"] = str(track.track_id)
+                det["track_hits"] = track.hits
+                det["bbox_iou"] = iou
+                det["dx"] = ncx - ocx
+                det["dy"] = ncy - ocy
                 unmatched_tracks.discard(ti)
                 unmatched_dets.discard(di)
 
@@ -69,6 +79,10 @@ class CameraTracker:
             self.next_id += 1
             self.tracks.append(track)
             det["local_track_id"] = str(track.track_id)
+            det["track_hits"] = 1
+            det["bbox_iou"] = 0.0
+            det["dx"] = 0.0
+            det["dy"] = 0.0
         return detections
 
     def reset(self) -> None:

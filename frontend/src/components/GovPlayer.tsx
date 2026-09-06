@@ -115,7 +115,9 @@ export default function GovPlayer({
         ref={ref}
         className={`absolute inset-0 w-full h-full object-contain bg-transparent ${videoReady ? "opacity-100" : "opacity-0"}`}
         muted
+        loop
         playsInline
+        autoPlay={autoPlay}
         controls={false}
         poster={poster}
       />
@@ -129,14 +131,22 @@ export default function GovPlayer({
             height: `${(bbox.h / 240) * 100}%`,
           }}
         >
-          <div className="absolute -top-4 left-0 text-[9px] font-mono text-brass-400">
-            {live.plate ?? live.object_type}
+          <div className="absolute -top-4 left-0 text-[9px] font-mono text-brass-400 whitespace-nowrap">
+            {typeof live.attributes?.color === "string" ? `${live.attributes.color} ` : ""}
+            {live.plate ?? (live.attributes?.plate_status === "unreadable" ? "no plate" : live.object_type)}{" "}
+            {Math.round(live.confidence * 100)}%
           </div>
         </div>
       )}
       <div className="absolute top-2 left-2 text-[10px] font-mono bg-black/60 px-1.5 py-0.5 rounded text-orange-300">
         GOV · {camera.code} · {(portal || "sentinel").replace(/^https?:\/\//, "")}
       </div>
+      {(camera.extra?.plate_status === "unreadable" || live?.attributes?.plate_status === "unreadable") && (
+        <div className="absolute top-2 right-2 text-[10px] font-mono bg-black/70 text-amber-200 px-1.5 py-0.5 rounded max-w-[60%] truncate">
+          Plate unreadable · night PTZ
+          {typeof camera.extra?.anpr_burst === "number" ? ` · burst ${camera.extra.anpr_burst}` : ""}
+        </div>
+      )}
       <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2 text-[10px] font-mono text-white/80">
         <span className="truncate">{camera.address || camera.name}</span>
         <span className="shrink-0 bg-black/50 px-1.5 py-0.5 rounded">

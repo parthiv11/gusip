@@ -813,7 +813,13 @@ def _opencv_read_frames(url: str, timeout_s: float, count: int = 5, skip: int = 
         import cv2
     except Exception:
         return []
-    validate_sentinel_url(url, frozenset({"rtsp"}))
+    scheme = urlsplit(url).scheme.lower()
+    if scheme == "rtsp":
+        validate_sentinel_url(url, frozenset({"rtsp"}))
+    elif scheme in {"http", "https"}:
+        validate_sentinel_url(url, frozenset({"http", "https"}))
+    else:
+        return []
     cap = None
     frames: list[tuple[bytes, float | None]] = []
     try:
@@ -883,9 +889,9 @@ def _grab_rtsp_opencv_burst(url: str, count: int = 5, *, timeout_s: float = 10.0
     return box[0]
 
 
-def _grab_frame_burst(url: str, count: int = 5) -> list[tuple[bytes, float | None]]:
-    if url.startswith("rtsp://"):
-        burst = _grab_rtsp_opencv_burst(url, count=count)
+def _grab_frame_burst(url: str, count: int = 8) -> list[tuple[bytes, float | None]]:
+    if url.startswith(("rtsp://", "http://", "https://")):
+        burst = _grab_rtsp_opencv_burst(url, count=count, timeout_s=12.0 if url.startswith("http") else 10.0)
         if burst:
             return burst
     jpeg, pts = _grab_frame_sample(url)
@@ -1001,7 +1007,7 @@ async def sample_camera(cam: Camera) -> int:
     url = urls[0]
     burst: list[tuple[bytes, float | None]] = []
     for candidate in urls:
-        burst = await asyncio.to_thread(_grab_frame_burst, candidate, 5)
+        burst = await asyncio.to_thread(_grab_frame_burst, candidate, 8)
         if burst:
             url = candidate
             jpeg, pts = burst[-1]
@@ -1019,24 +1025,15 @@ async def sample_camera(cam: Camera) -> int:
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
     (PREVIEW_DIR / f"{cam.code}.jpg").write_bytes(jpeg)
     try:
-        from app.workers.inference import detect_jpeg, emit_detections, inference_available
+        from app.workers.inference import detect_jpeg, inference_available
 
         if inference_available():
             dets = await asyncio.to_thread(
                 detect_jpeg, jpeg, camera_key=cam.code, stream_epoch=stream_epoch
             )
-            if dets:
-                await emit_detections(
-                    cam,
-                    dets,
-                    jpeg,
-                    timestamp=event_timestamp,
-                    stream_epoch=stream_epoch,
-                    stream_pts=pts,
-                )
-                log.info("YOLO live %s objects=%s", cam.code, len(dets))
     except Exception:
         log.exception("YOLO on %s failed", cam.code)
+        dets = []
     frames = [frame for frame, _pts in burst if frame]
     text = await asyncio.to_thread(
         ocr_image,
@@ -1047,6 +1044,23 @@ async def sample_camera(cam: Camera) -> int:
         camera_key=cam.code,
     )
     plates = extract_plates(text)
+    plate_status = "read" if plates else ("unreadable" if any(d.get("object_type") in {"vehicle", "two-wheeler"} for d in dets) else "none")
+    try:
+        from app.workers.inference import emit_detections, inference_available
+
+        if inference_available() and dets:
+            await emit_detections(
+                cam,
+                dets,
+                jpeg,
+                timestamp=event_timestamp,
+                stream_epoch=stream_epoch,
+                stream_pts=pts,
+                plate_status=plate_status,
+            )
+            log.info("YOLO live %s objects=%s plate_status=%s", cam.code, len(dets), plate_status)
+    except Exception:
+        log.exception("YOLO emit on %s failed", cam.code)
     emitted = 0
     async with SessionLocal() as db:
         fresh = await db.get(Camera, cam.id)
@@ -1058,6 +1072,7 @@ async def sample_camera(cam: Camera) -> int:
                 extra[key] = clock_extra[key]
         extra["last_ocr"] = text[:400]
         extra["anpr_burst"] = len(frames)
+        extra["plate_status"] = plate_status
         extra["last_sample_at"] = event_timestamp.isoformat()
         extra["last_grab_url"] = url
         extra["preview_url"] = f"/api/v1/feeds/sentinel/{sid}/preview"

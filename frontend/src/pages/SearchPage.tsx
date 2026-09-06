@@ -1,7 +1,9 @@
 import { FormEvent, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, can, getSession } from "../api/client";
 import { snapSrc } from "../api/media";
 import InvestigationMap, { InvestigationPoint } from "../components/InvestigationMap";
+import ModeTabs from "../components/ModeTabs";
 import type { EventItem, TrackPoint } from "../types";
 
 interface FaceHit {
@@ -52,6 +54,13 @@ function attr(events: EventItem[], key: string): string | null {
   return null;
 }
 
+type SearchMode = "plate" | "face" | "appearance";
+
+function parseMode(raw: string | null): SearchMode {
+  if (raw === "appearance" || raw === "face" || raw === "plate") return raw;
+  return "plate";
+}
+
 function eventForHop(events: EventItem[], hop: TrackPoint): EventItem | undefined {
   const sameCam = events.filter((ev) => ev.camera_id === hop.camera_id);
   if (!sameCam.length) return undefined;
@@ -60,10 +69,13 @@ function eventForHop(events: EventItem[], hop: TrackPoint): EventItem | undefine
 }
 
 export default function SearchPage() {
-  const [mode, setMode] = useState<"plate" | "face">("plate");
-  const [plate, setPlate] = useState("GJ 01 ST 0001");
+  const [params, setParams] = useSearchParams();
+  const mode = parseMode(params.get("mode"));
+  const [plate, setPlate] = useState(() => params.get("plate") || "GJ 01 ST 0001");
+  const [queryColor, setQueryColor] = useState(() => params.get("color") || "white");
+  const [vehicleClass, setVehicleClass] = useState(() => params.get("class") || "suv");
   const [faceFile, setFaceFile] = useState<File | null>(null);
-  const [purpose, setPurpose] = useState("evaluation");
+  const [purpose, setPurpose] = useState(() => params.get("purpose") || "evaluation");
   const [events, setEvents] = useState<EventItem[]>([]);
   const [track, setTrack] = useState<TrackPoint[]>([]);
   const [faceHits, setFaceHits] = useState<FaceHit[]>([]);
@@ -74,11 +86,57 @@ export default function SearchPage() {
   const session = getSession();
   const homeScoped = session?.scope === "department";
 
+  function setMode(next: SearchMode) {
+    setParams(
+      (p) => {
+        const copy = new URLSearchParams(p);
+        copy.set("mode", next);
+        return copy;
+      },
+      { replace: true }
+    );
+  }
+
+  function persistQuery() {
+    setParams(
+      (p) => {
+        const copy = new URLSearchParams(p);
+        copy.set("mode", mode);
+        copy.set("purpose", purpose);
+        if (mode === "plate") copy.set("plate", plate);
+        if (mode === "appearance") {
+          copy.set("color", queryColor);
+          copy.set("class", vehicleClass);
+        }
+        return copy;
+      },
+      { replace: true }
+    );
+  }
+
   async function onSearch(e: FormEvent) {
     e.preventDefault();
     setError("");
+    persistQuery();
     try {
-      if (mode === "face") {
+        if (mode === "appearance") {
+          setFaceHits([]);
+          setFaceEngine("");
+          const q = new URLSearchParams({
+            purpose,
+            color: queryColor,
+            vehicle_class: vehicleClass,
+            limit: "80",
+          });
+          const out = await api<{ events: EventItem[]; track: TrackPoint[]; global_track_id?: string | null }>(
+            `/api/v1/search/appearance?${q.toString()}`
+          );
+          setEvents(out.events);
+          setTrack(out.track);
+          setSelectedIdx(out.track.length ? out.track.length - 1 : null);
+          return;
+        }
+        if (mode === "face") {
         if (!faceFile) {
           setError("Choose a still of an enrolled adult.");
           return;
@@ -158,13 +216,27 @@ export default function SearchPage() {
 
   return (
     <div className="h-full grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto lg:overflow-hidden bg-[#0B0D10]">
-      <div className="lg:col-span-5 p-4 overflow-auto border-b lg:border-b-0 lg:border-r border-white/10">
-        <h1 className="text-lg font-semibold mb-1 text-[#F2F4F7]">Search the State</h1>
+      <div className="lg:col-span-5 p-4 overflow-auto border-b lg:border-b-0 lg:border-r border-white/10 relative z-10 bg-[#0B0D10]">
+        <h1 className="text-lg font-semibold mb-1 text-[#F2F4F7]">Investigate</h1>
         <p className="text-[11px] text-slate-500 mb-3">
-          Investigator-assisted trail. Purpose is mandatory and audited. Face search is logged and meant for enrolled adults on own/demo cameras.
+          Investigator-assisted trail. Purpose is mandatory and audited. Switch modes with the tabs or arrow keys. Bookmark the URL to return to the same mode.
         </p>
+        <nav className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" aria-label="Related views">
+          <Link className="text-slate-400 hover:text-brass-400" to="/?wall=demo">
+            Own/demo wall
+          </Link>
+          <Link className="text-slate-400 hover:text-brass-400" to="/?wall=gov">
+            Gov wall
+          </Link>
+          <Link className="text-slate-400 hover:text-brass-400" to="/alerts">
+            Open alerts
+          </Link>
+          <Link className="text-slate-400 hover:text-brass-400" to="/watchlist">
+            Watchlist
+          </Link>
+        </nav>
         {homeScoped && (
-          <div className="mb-3 rounded border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[11px] text-orange-200">
+          <div className="mb-3 rounded border border-orange-500/30 bg-orange-500/10 px-3 py-2 text-[11px] text-orange-200" role="status">
             Showing <span className="font-semibold">home-department cameras only</span>. The stolen Fortuner corridor
             also uses Traffic / Highway / Gandhinagar feeds.
             {can("break_glass")
@@ -172,50 +244,96 @@ export default function SearchPage() {
               : " Sign in as investigator (break-glass) or admin for the full Ahmedabad → Gandhinagar hops."}
           </div>
         )}
-        <div className="flex gap-1 mb-3 text-xs">
-          {(["plate", "face"] as const).map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setMode(id)}
-              className={`px-3 py-1 rounded border ${
-                mode === id ? "border-brass-400 bg-brass-500/15 text-brass-300" : "border-white/10 text-slate-400"
-              }`}
-            >
-              {id === "plate" ? "Plate" : "Face"}
-            </button>
-          ))}
-        </div>
-        <form onSubmit={onSearch} className="flex flex-col gap-2 mb-4">
+        <ModeTabs
+          idPrefix="search-mode"
+          label="Investigate mode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { id: "plate", label: "Plate", hint: "Search by Gujarat registration" },
+            { id: "appearance", label: "Appearance", hint: "Night PTZ when the plate is unreadable" },
+            { id: "face", label: "Face", hint: "Enrolled adults on own/demo cameras" },
+          ]}
+        />
+        <p className="mt-2 mb-3 text-[11px] text-slate-500">
+          {mode === "plate" && "Search by plate. Evaluation plate GJ 01 ST 0001 is already on Watchlist."}
+          {mode === "appearance" &&
+            "Color + class match for night PTZ when the plate is a white blob. White SUV is the stolen Fortuner watchlist."}
+          {mode === "face" &&
+            "Enroll an adult still on Watchlist (ArcFace). Search with another photo of the same person. Own/demo cameras only."}
+        </p>
+        <form onSubmit={onSearch} id="search-mode-panel" role="tabpanel" aria-labelledby={`search-mode-${mode}`} className="flex flex-col gap-2 mb-4">
           {mode === "plate" ? (
-            <input
-              className="bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm font-mono"
-              value={plate}
-              onChange={(e) => setPlate(e.target.value)}
-              aria-label="Plate or description"
-            />
+            <label className="block text-[11px] text-slate-400">
+              Plate
+              <input
+                className="mt-1 w-full bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm font-mono text-slate-100"
+                value={plate}
+                onChange={(e) => setPlate(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+          ) : mode === "appearance" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-[11px] text-slate-400">
+                Color
+                <select
+                  className="mt-1 w-full bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm text-slate-100"
+                  value={queryColor}
+                  onChange={(e) => setQueryColor(e.target.value)}
+                >
+                  {["white", "black", "gray", "red", "yellow", "blue", "green"].map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-[11px] text-slate-400">
+                Vehicle class
+                <select
+                  className="mt-1 w-full bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm text-slate-100"
+                  value={vehicleClass}
+                  onChange={(e) => setVehicleClass(e.target.value)}
+                >
+                  {["suv", "sedan", "car", "truck", "bus", "two-wheeler"].map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           ) : (
-            <input
-              type="file"
-              accept="image/*"
-              className="bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm"
-              aria-label="Face still"
-              onChange={(e) => setFaceFile(e.target.files?.[0] ?? null)}
-            />
+            <label className="block text-[11px] text-slate-400">
+              Face still
+              <input
+                type="file"
+                accept="image/*"
+                className="mt-1 w-full bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm"
+                onChange={(e) => setFaceFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
           )}
           <div className="flex flex-col sm:flex-row gap-2">
-            <select
-              className="flex-1 bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm"
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-            >
-              {PURPOSES.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button className="bg-brass-500 text-ink-950 px-4 rounded text-sm font-semibold">Search</button>
+            <label className="flex-1 block text-[11px] text-slate-400">
+              Purpose (audited)
+              <select
+                className="mt-1 w-full bg-ink-900 border border-white/10 rounded px-3 py-2 text-sm text-slate-100"
+                value={purpose}
+                onChange={(e) => setPurpose(e.target.value)}
+              >
+                {PURPOSES.map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="sm:self-end bg-brass-500 text-ink-950 px-4 py-2 rounded text-sm font-semibold min-h-10">
+              Search
+            </button>
           </div>
         </form>
         {mode === "face" && faceHits.length > 0 && (
@@ -233,40 +351,38 @@ export default function SearchPage() {
           </div>
         )}
         <p className="text-[11px] text-slate-500 mb-3">
-          {mode === "face"
-            ? "Enroll an adult still on Watchlist (ArcFace). Search with another photo of the same person. Own/demo cameras only."
-            : "Evaluation plate GJ 01 ST 0001 is already on Watchlist. Search as investigator with break-glass (or admin) to see SG Highway → Gandhinagar hops."}
           {canExport ? (
-            <>
-              {" "}
-              <button
-                type="button"
-                className="text-orange-300 underline"
-                onClick={async () => {
-                  const r = await fetch("/api/v1/feeds/anpr-report?fmt=csv", {
-                    credentials: "same-origin",
-                  });
-                  if (!r.ok) {
-                    const text = await r.text();
-                    setError(/<html[\s>]/i.test(text) ? `Export failed (${r.status})` : text);
-                    return;
-                  }
-                  const blob = await r.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = "gusip-anpr-report.csv";
-                  a.click();
-                }}
-              >
-                Download ANPR report (CSV)
-              </button>
-            </>
+            <button
+              type="button"
+              className="text-orange-300 underline"
+              onClick={async () => {
+                const r = await fetch("/api/v1/feeds/anpr-report?fmt=csv", {
+                  credentials: "same-origin",
+                });
+                if (!r.ok) {
+                  const text = await r.text();
+                  setError(/<html[\s>]/i.test(text) ? `Export failed (${r.status})` : text);
+                  return;
+                }
+                const blob = await r.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "gusip-anpr-report.csv";
+                a.click();
+              }}
+            >
+              Download ANPR report (CSV)
+            </button>
           ) : (
             <span className="block mt-1 text-slate-600">CSV export is limited to investigation / coordinator / admin.</span>
           )}
         </p>
-        {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
+        {error && (
+          <div className="text-red-400 text-xs mb-2" role="alert">
+            {error}
+          </div>
+        )}
 
         {searched && (
           <div className="mb-4 rounded border border-white/10 bg-ink-900/60 p-3">
@@ -305,11 +421,15 @@ export default function SearchPage() {
         )}
 
         {still && (
-          <img src={still} alt="" className="mb-3 w-full max-h-40 object-contain rounded border border-white/10 bg-black" />
+          <img
+            src={still}
+            alt={selectedHop ? `Still from ${selectedHop.camera_code}` : "Selected hop still"}
+            className="mb-3 w-full max-h-40 object-contain rounded border border-white/10 bg-black"
+          />
         )}
 
         <div className="text-xs text-slate-500 mb-2">
-          {events.length} detections coalesced into {track.length} camera hop{track.length === 1 ? "" : "s"} — click a hop
+          {events.length} detections coalesced into {track.length} camera hop{track.length === 1 ? "" : "s"} — select a hop
           for the still
         </div>
         <ol className="space-y-2">
@@ -322,6 +442,7 @@ export default function SearchPage() {
               <li key={`${p.camera_id}-${p.timestamp}-${i}`}>
                 <button
                   type="button"
+                  aria-current={active ? "step" : undefined}
                   onClick={() => setSelectedIdx(i)}
                   className={`w-full text-left text-sm border rounded p-2 ${
                     active ? "border-brass-400 bg-brass-500/10" : "border-white/10 hover:border-white/20"
@@ -341,7 +462,7 @@ export default function SearchPage() {
           })}
         </ol>
       </div>
-      <div className="lg:col-span-7 min-h-[40vh] lg:min-h-0">
+      <div className="lg:col-span-7 min-h-[40vh] lg:min-h-0 relative z-0">
         <InvestigationMap
           points={invPoints}
           selectedEventId={selectedHopIndex >= 0 ? selectedHopIndex + 1 : undefined}

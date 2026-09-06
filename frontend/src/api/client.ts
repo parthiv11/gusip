@@ -86,7 +86,15 @@ export function can(action: string): boolean {
   if (caps && caps.length) return caps.includes(action);
   const fallback: Record<string, string[]> = {
     control_room_operator: ["view_live", "ack_alert", "search", "create_case"],
-    investigation_officer: ["view_live", "ack_alert", "search", "export", "watchlist_write", "create_case", "break_glass"],
+    investigation_officer: [
+      "view_live",
+      "ack_alert",
+      "search",
+      "export",
+      "watchlist_write",
+      "create_case",
+      "break_glass",
+    ],
     department_coordinator: [
       "view_live",
       "ack_alert",
@@ -97,6 +105,18 @@ export function can(action: string): boolean {
       "admin_stats",
       "create_case",
       "break_glass",
+    ],
+    system_admin: [
+      "view_live",
+      "ack_alert",
+      "search",
+      "export",
+      "watchlist_write",
+      "onboard_camera",
+      "admin_stats",
+      "create_case",
+      "create_user",
+      "manage_roles",
     ],
   };
   return (fallback[session.role] ?? []).includes(action);

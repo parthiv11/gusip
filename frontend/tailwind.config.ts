@@ -5,31 +5,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: "#0B0D10",
+        bg: "rgb(var(--ink-950) / <alpha-value>)",
         panel: {
-          primary: "#11151C",
-          secondary: "#151A22",
-          border: "rgba(255, 255, 255, 0.10)",
+          primary: "rgb(var(--ink-900) / <alpha-value>)",
+          secondary: "rgb(var(--ink-800) / <alpha-value>)",
+          border: "rgb(var(--hairline) / <alpha-value>)",
         },
         text: {
-          primary: "#F2F4F7",
-          secondary: "#9AA4B2",
-          muted: "#667085",
+          primary: "rgb(var(--fg) / <alpha-value>)",
+          secondary: "rgb(var(--fg-muted) / <alpha-value>)",
+          muted: "rgb(var(--fg-subtle) / <alpha-value>)",
         },
         amber: {
-          gold: "#D9A441",
-          hover: "#E8B858",
-          tint: "rgba(217, 164, 65, 0.10)",
+          gold: "rgb(var(--brass) / <alpha-value>)",
+          hover: "rgb(var(--brass-bright) / <alpha-value>)",
+          tint: "rgb(var(--brass) / 0.10)",
         },
         ink: {
-          950: "#0B0D10",
-          900: "#11151C",
-          800: "#151A22",
-          700: "#1E2430",
+          950: "rgb(var(--ink-950) / <alpha-value>)",
+          900: "rgb(var(--ink-900) / <alpha-value>)",
+          800: "rgb(var(--ink-800) / <alpha-value>)",
+          700: "rgb(var(--ink-700) / <alpha-value>)",
         },
         brass: {
-          400: "#E8B858",
-          500: "#D9A441",
+          400: "rgb(var(--brass-bright) / <alpha-value>)",
+          500: "rgb(var(--brass) / <alpha-value>)",
         },
       },
       fontFamily: {

@@ -70,6 +70,7 @@ export default function MapPage() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[#0B0D10]">
+      <h1 className="sr-only">GIS coverage</h1>
       <div className="flex-1 min-h-[50vh] lg:min-h-0">
         <GujaratMap cameras={mapCameras} showCoverage alerts={alerts} />
       </div>

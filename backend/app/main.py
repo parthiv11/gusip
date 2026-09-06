@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
             await conn.execute(text("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS face_embedding JSONB"))
     async with SessionLocal() as db:
+        from app.services.iam import ensure_builtin_roles
+
+        await ensure_builtin_roles(db)
         await collapse_duplicate_open_alerts(db)
         await db.commit()
     if settings.app_env.lower() not in {"production", "prod"}:

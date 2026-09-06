@@ -63,12 +63,17 @@ export default function CasesPage() {
   return (
     <div className="h-full p-4 overflow-auto bg-[#0B0D10]">
       <h1 className="text-lg font-semibold mb-4 text-[#F2F4F7]">Case folders</h1>
-      {error && <div className="text-red-400 text-xs mb-2">{error}</div>}
+      {error && (
+        <div className="text-red-400 text-xs mb-2" role="alert">
+          {error}
+        </div>
+      )}
       <form onSubmit={create} className="flex flex-col sm:flex-row gap-2 mb-6">
         <input
           className="flex-1 bg-[#11151C] border border-white/10 rounded px-3 py-2 text-sm text-[#F2F4F7]"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          aria-label="Case title"
         />
         <button className="bg-[#D9A441] text-[#0B0D10] px-4 py-2 rounded text-sm font-semibold">Create</button>
       </form>
