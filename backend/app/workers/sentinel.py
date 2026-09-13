@@ -27,7 +27,6 @@ import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
@@ -87,7 +86,9 @@ def validate_sentinel_url(url: str, allowed_schemes: frozenset[str] = frozenset(
         allowed_hosts.add(local.hostname.lower())
     if parsed.scheme.lower() not in allowed_schemes or host not in allowed_hosts:
         raise ValueError(f"Sentinel URL is outside the configured allowlist: {parsed.scheme}://{host}")
-    if parsed.username or parsed.password:
+    media_host = (settings.sentinel_rtsp_host or "").strip().lower()
+    allow_userinfo = bool(media_host) and host == media_host and parsed.scheme.lower() in {"rtsp", "http", "https"}
+    if (parsed.username or parsed.password) and not allow_userinfo:
         raise ValueError("Sentinel URLs must not contain user info")
     return url
 
@@ -251,17 +252,30 @@ def _is_live(item: dict[str, Any]) -> bool:
         return True
     if item.get("live") is False:
         return False
-    return str(item.get("status") or "").lower() in {"live", "online", "processing"}
+    status = str(item.get("status") or "").lower()
+    if status in {"offline", "down"}:
+        return False
+    if status in {"live", "online", "processing"}:
+        return True
+    # cameras.json rows are live grid cameras unless marked otherwise.
+    return bool(item.get("id") or item.get("name"))
 
 
 def normalize_camera(item: dict[str, Any], base_url: str | None = None) -> dict[str, Any]:
-    """Map /api/ingest (or /api/cameras) into one shape. Catalogue is the contract."""
+    """Map cameras.json (or legacy /api/ingest) into one shape. Catalogue is the contract."""
+    from app.services.sentinel_auth import grid_rtsp_url, grid_whep_url
+
     base = (base_url or settings.sentinel_base_url).rstrip("/")
     sid = str(item.get("id") or item.get("number") or "")
+    has_media = any(item.get(key) for key in ("rtsp_url", "hls_url", "hls_live_url", "webrtc_url", "whep_url"))
     hls = item.get("hls_live_url") or item.get("hls_url")
     whep = item.get("webrtc_url") or item.get("whep_url")
     rtsp = item.get("rtsp_url")
     live = _is_live(item)
+    if sid and not has_media and live:
+        hls = f"/{sid}/index.m3u8"
+        rtsp = grid_rtsp_url(sid)
+        whep = grid_whep_url(sid)
 
     def abs_http(url: str | None) -> str | None:
         if not url:
@@ -291,8 +305,9 @@ def normalize_camera(item: dict[str, Any], base_url: str | None = None) -> dict[
         "rtsp_url": rtsp,
         "whep_url": abs_http(whep),
         "hls_url": abs_http(hls),
+        "portal_id": sid,
         # Documented browser range-request fallback, not an inference URL.
-        "stream_url": abs_http(f"/stream/{sid}") if sid else None,
+        "stream_url": abs_http(f"/{sid}/index.m3u8") if sid else None,
         "container": item.get("container"),
         "status": "live" if live else str(item.get("status") or "offline"),
     }
@@ -328,13 +343,17 @@ def grab_cmd(url: str, ffmpeg: str = "ffmpeg") -> list[str]:
         if url.startswith(("http://", "https://")):
             validate_sentinel_url(url, frozenset({"http", "https"}))
             player = _hls_player_headers(url)
+            header_lines = f"Referer: {player['Referer']}\r\nOrigin: {player['Origin']}\r\n"
+            cookie = player.get("Cookie")
+            if cookie:
+                header_lines += f"Cookie: {cookie}\r\n"
             cmd += [
                 "-rw_timeout",
                 "8000000",
                 "-user_agent",
                 player["User-Agent"],
                 "-headers",
-                f"Referer: {player['Referer']}\r\nOrigin: {player['Origin']}\r\n",
+                header_lines,
             ]
     cmd += [
         "-i",
@@ -405,32 +424,40 @@ def advance_stream_clock(
 
 
 async def fetch_catalog() -> list[dict[str, Any]]:
-    """Camera list and URLs come from GET /api/ingest. IDs are not hard-coded."""
+    """Camera list comes from GET /cameras.json. IDs are not hard-coded."""
+    from app.services.sentinel_auth import apply_session, invalidate_session, peek_token
+
     base = settings.sentinel_base_url.rstrip("/")
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, headers=settings.sentinel_headers()) as client:
-        for path in ("/api/ingest", "/api/cameras"):
+    headers = apply_session(settings.sentinel_headers())
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False, headers=headers) as client:
+        for path in ("/cameras.json", "/api/ingest", "/api/cameras"):
             try:
+                used_token = peek_token()
                 r = await _async_get_with_redirects(client, f"{base}{path}")
+                needs_login = (r.is_redirect and "/auth/login" in (r.headers.get("location") or "")) or r.status_code in (
+                    401,
+                    403,
+                )
+                if needs_login:
+                    invalidate_session(expected=used_token)
+                    client.headers.update(apply_session(settings.sentinel_headers(), force=True))
+                    r = await _async_get_with_redirects(client, f"{base}{path}")
                 if r.status_code >= 400:
                     log.warning("catalogue %s -> %s", path, r.status_code)
                     continue
                 cams = _camera_list(r.json())
                 if cams:
+                    origin = str(r.url).rsplit(path, 1)[0] or base
                     log.info("sentinel catalogue %s n=%s", path, len(cams))
-                    return [normalize_camera(c, str(r.url).rsplit(path, 1)[0] or base) for c in cams]
+                    return [normalize_camera(c, origin) for c in cams]
             except Exception:
                 log.exception("catalogue %s failed", path)
     return []
 
 
 async def fetch_state(cam_id: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=False, headers=settings.sentinel_headers()) as client:
-        r = await _async_get_with_redirects(
-            client,
-            f"{settings.sentinel_base_url.rstrip('/')}/api/cameras/{cam_id}/state",
-        )
-        r.raise_for_status()
-        return r.json()
+    """Grid cameras are live; the old /api/cameras/{id}/state path is gone."""
+    return {"id": cam_id, "status": "live", "source": "cameras.json"}
 
 
 async def ensure_department(db: AsyncSession) -> Department:
@@ -445,6 +472,9 @@ async def ensure_department(db: AsyncSession) -> Department:
 
 async def sync_catalog() -> int:
     cams = await fetch_catalog()
+    if not cams:
+        log.warning("sentinel catalogue empty — keeping existing cameras")
+        return 0
     async with SessionLocal() as db:
         dept = await ensure_department(db)
         existing = {
@@ -468,6 +498,7 @@ async def sync_catalog() -> int:
                 "whep_url": item.get("whep_url"),
                 "hls_url": item.get("hls_url"),
                 "stream_url": item.get("stream_url"),
+                "portal_id": item.get("portal_id") or sid,
                 "codec": item.get("codec"),
                 "width": item.get("width"),
                 "height": item.get("height"),
@@ -476,7 +507,7 @@ async def sync_catalog() -> int:
                 "container": item.get("container"),
                 "official_location": loc,
                 "portal": settings.sentinel_base_url,
-                "catalogue": "api/ingest",
+                "catalogue": "cameras.json",
             }
             cam = existing.get(code)
             if cam:
@@ -520,6 +551,7 @@ async def sync_catalog() -> int:
         for code, cam in existing.items():
             if code not in seen:
                 cam.status = "offline"
+                cam.is_active = False
         await db.commit()
     log.info("synced %s sentinel cameras", len(cams))
     return len(cams)
@@ -552,12 +584,16 @@ def _hls_player_headers(url: str, accept: str = "*/*") -> dict[str, str]:
     bits = [p for p in parts.path.split("/") if p]
     camera_id = bits[2] if len(bits) >= 3 and bits[0] == "live" and bits[1] == "stream" else ""
     referer = f"{origin}/camera/{camera_id}" if camera_id else f"{origin}/"
-    return {
-        "User-Agent": settings.sentinel_user_agent,
-        "Accept": accept,
-        "Referer": referer,
-        "Origin": origin,
-    }
+    from app.services.sentinel_auth import apply_session
+
+    return apply_session(
+        {
+            "User-Agent": settings.sentinel_user_agent,
+            "Accept": accept,
+            "Referer": referer,
+            "Origin": origin,
+        }
+    )
 
 
 def _hls_secret(client: httpx.Client, url: str) -> str | None:
@@ -920,6 +956,15 @@ def _grab_ffmpeg(url: str, src: str, ffmpeg: str) -> tuple[bytes | None, float |
         delay = _mark_rtsp_failure()
         log.info("RTSP :8554 unreachable; retrying in %.0fs while ANPR uses HLS", delay)
     elif proc.returncode != 0:
+        # Do not invalidate the shared Sentinel session on an ffmpeg 401/403:
+        # ffmpeg's own HTTP client gets rejected by the grid intermittently
+        # even with a session cookie that a plain HTTP client (curl/httpx)
+        # accepts at the same moment — verified by fetching the same URL with
+        # the same cookie via both clients back to back. Treating that as
+        # proof of a dead session caused a relogin storm that kept knocking
+        # out the very session other grabs were successfully using. The
+        # reliable place to detect a truly dead session is fetch_catalog's
+        # httpx-based request, which invalidates+relogs in on 401/403 there.
         _report_feed(logging.WARNING, "", url, "ffmpeg", err[-400:] or f"exit {proc.returncode}")
     return None, pts
 
@@ -949,7 +994,7 @@ def _grab_frame_sample(url: str, offset: float | None = None) -> tuple[bytes | N
         return None, None
     tmp_path: str | None = None
     src = url
-    if url.startswith("http"):
+    if url.startswith("http") and "cctv.corp8.cloud" not in url:
         segment = fetch_hls_segment(url)
         if not segment:
             return None, None
@@ -993,7 +1038,7 @@ async def sample_camera(cam: Camera) -> int:
     urls = inference_urls(extra)
     hls = extra.get("hls_url")
     local = local_rtsp_url(sid)
-    if local and isinstance(hls, str) and hls:
+    if local and isinstance(hls, str) and hls and "cctv.corp8.cloud" not in hls:
         ready = await asyncio.to_thread(_ensure_local_publisher, sid, hls)
         if ready:
             urls = [local, *[u for u in urls if u != extra.get("rtsp_url")]]

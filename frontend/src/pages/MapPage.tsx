@@ -27,20 +27,27 @@ export default function MapPage() {
   const [dept, setDept] = useState("");
   const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api<{ id: number; name: string }[]>("/api/v1/cameras/departments").then(setDepartments);
+    api<{ id: number; name: string }[]>("/api/v1/cameras/departments")
+      .then(setDepartments)
+      .catch((err) => setError(String(err)));
     api<Gap[]>("/api/v1/gis/gaps")
       .then(setGaps)
       .catch(() => setGaps([]));
-    api<Alert[]>("/api/v1/alerts?status=new&limit=80").then(setAlerts);
+    api<Alert[]>("/api/v1/alerts?status=new&limit=80")
+      .then(setAlerts)
+      .catch((err) => setError(String(err)));
   }, []);
 
   useEffect(() => {
     const q = new URLSearchParams();
     if (status) q.set("status", status);
     if (dept) q.set("department_id", dept);
-    api<Camera[]>(`/api/v1/cameras?${q.toString()}`).then(setCameras);
+    api<Camera[]>(`/api/v1/cameras?${q.toString()}`)
+      .then(setCameras)
+      .catch((err) => setError(String(err)));
   }, [status, dept]);
 
   const gapItems = useMemo<CoverageGapItem[]>(() => {
@@ -69,8 +76,13 @@ export default function MapPage() {
   const mapCameras = selectedCity ? cameras.filter((c) => c.city === selectedCity) : cameras;
 
   return (
-    <div className="h-full flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[#0B0D10]">
+    <div className="relative h-full flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[#0B0D10]">
       <h1 className="sr-only">GIS coverage</h1>
+      {error && (
+        <div role="alert" className="absolute top-2 left-2 z-[1000] bg-red-950/90 border border-red-500/50 text-red-200 text-xs px-3 py-1.5 rounded">
+          {error}
+        </div>
+      )}
       <div className="flex-1 min-h-[50vh] lg:min-h-0">
         <GujaratMap cameras={mapCameras} showCoverage alerts={alerts} />
       </div>

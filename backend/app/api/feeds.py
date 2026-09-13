@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
-from urllib.parse import urljoin
+import re
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -21,6 +22,7 @@ from app.models.camera import Camera
 from app.models.event import DetectionEvent
 from app.models.user import User
 from app.services.local_feed import ensure_demo_loop, ensure_still_loop
+from app.services.sentinel_auth import apply_session
 from app.workers.sentinel import PREVIEW_DIR, fetch_catalog, fetch_state, sync_catalog, validate_sentinel_url
 
 router = APIRouter(prefix="/feeds", tags=["feeds"])
@@ -72,6 +74,25 @@ async def _authorize_sentinel_camera(
         raise HTTPException(404, "Unknown Sentinel camera")
     # SCRB evaluation wall is visible to any signed-in live-wall user.
     return camera
+
+
+def _portal_id(camera: Camera, sentinel_id: str) -> str:
+    extra = camera.extra or {}
+    return str(extra.get("portal_id") or extra.get("sentinel_id") or sentinel_id)
+
+
+def _rewrite_grid_playlist(body: str, sentinel_id: str) -> str:
+    prefix = f"/api/v1/feeds/sentinel/{sentinel_id}/hls/"
+    lines: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("#") and "URI=" in line:
+            line = re.sub(r'URI="[^"]+"', f'URI="{prefix}enc.key"', line)
+        elif line and not line.startswith("#"):
+            name = urlsplit(line).path.rsplit("/", 1)[-1]
+            if name:
+                line = prefix + name
+        lines.append(line)
+    return "\n".join(lines) + "\n"
 
 
 @router.post("/sentinel/sync")
@@ -129,6 +150,71 @@ async def preview(
     return Response(content=path.read_bytes(), media_type="image/jpeg")
 
 
+@router.get("/sentinel/{sentinel_id}/hls/{asset:path}")
+async def proxy_grid_hls(
+    sentinel_id: str,
+    asset: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """Same-origin HLS for the wall. Session cookie stays on the API, not in the browser."""
+    camera = await _authorize_sentinel_camera(db, user, sentinel_id)
+    if ".." in asset or asset.startswith("/") or not asset:
+        raise HTTPException(400, "Invalid HLS asset")
+    origin = settings.sentinel_base_url.rstrip("/")
+    portal = _portal_id(camera, sentinel_id)
+    extra = camera.extra or {}
+    if asset == "enc.key":
+        url = f"{origin}/enc.key"
+    elif asset.endswith(".m3u8"):
+        url = str(extra.get("hls_url") or f"{origin}/{portal}/index.m3u8")
+    else:
+        url = f"{origin}/{portal}/{asset}"
+    try:
+        validate_sentinel_url(url)
+    except ValueError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    headers = apply_session(settings.sentinel_headers(accept="*/*"))
+    headers["Referer"] = f"{origin}/"
+    headers["Origin"] = origin
+    client = httpx.AsyncClient(timeout=45.0, follow_redirects=False)
+    try:
+        resp = await _send_upstream_stream(client, url, headers)
+    except (httpx.HTTPError, ValueError) as exc:
+        await client.aclose()
+        raise HTTPException(502, f"Upstream feed error: {exc}") from exc
+    ctype = (resp.headers.get("content-type") or "").lower()
+    if resp.status_code >= 400 or "html" in ctype:
+        await resp.aclose()
+        await client.aclose()
+        raise HTTPException(502, "Sentinel HLS unavailable")
+    if asset.endswith(".m3u8") or "mpegurl" in ctype:
+        body = await resp.aread()
+        await resp.aclose()
+        await client.aclose()
+        rewritten = _rewrite_grid_playlist(body.decode("utf-8", "replace"), sentinel_id)
+        return Response(
+            content=rewritten,
+            media_type="application/vnd.apple.mpegurl",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    out: dict[str, str] = {"Cache-Control": "no-store"}
+    for key in ("content-type", "content-length", "accept-ranges"):
+        if key in resp.headers:
+            out[key] = resp.headers[key]
+
+    async def body():
+        try:
+            async for chunk in resp.aiter_bytes(64 * 1024):
+                yield chunk
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(body(), status_code=resp.status_code, headers=out, media_type=out.get("content-type"))
+
+
 @router.get("/sentinel/{sentinel_id}/stream")
 async def proxy_stream(
     sentinel_id: str,
@@ -140,8 +226,8 @@ async def proxy_stream(
     await _authorize_sentinel_camera(db, user, sentinel_id)
     origin = settings.sentinel_base_url.rstrip("/")
     url = f"{origin}/stream/{sentinel_id}"
-    headers = settings.sentinel_headers(accept="*/*")
-    headers["Referer"] = f"{origin}/camera/{sentinel_id}"
+    headers = apply_session(settings.sentinel_headers(accept="*/*"))
+    headers["Referer"] = f"{origin}/"
     headers["Origin"] = origin
     rng = request.headers.get("range")
     if rng:
@@ -171,7 +257,7 @@ async def proxy_stream(
     except (httpx.HTTPError, ValueError):
         await client.aclose()
 
-    local = ensure_still_loop(sentinel_id) or ensure_demo_loop()
+    local = ensure_still_loop(sentinel_id)
     if local is None:
         raise HTTPException(502, "Upstream feed unavailable and no local loop is ready")
     return FileResponse(local, media_type="video/mp4", headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"})

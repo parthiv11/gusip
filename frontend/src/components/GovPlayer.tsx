@@ -10,11 +10,37 @@ export function sentinelId(camera: Camera): string | null {
   return null;
 }
 
+/** Same-origin HLS from the Camera Grid. Inference uses RTSP/HLS upstream, not this URL. */
+export function hlsProxy(camera: Camera): string | null {
+  const sid = sentinelId(camera);
+  if (!sid) return null;
+  return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/hls/index.m3u8`;
+}
+
 /** Browser playback fallback (range requests). Inference never uses this URL. */
 export function streamProxy(camera: Camera): string | null {
   const sid = sentinelId(camera);
   if (!sid) return null;
   return `/api/v1/feeds/sentinel/${encodeURIComponent(sid)}/stream`;
+}
+
+type HlsCtor = {
+  isSupported(): boolean;
+  Events: { MANIFEST_PARSED: string; ERROR: string; FRAG_BUFFERED: string };
+  ErrorTypes: { MEDIA_ERROR: string };
+  new (opts?: Record<string, unknown>): {
+    attachMedia(video: HTMLVideoElement): void;
+    loadSource(src: string): void;
+    on(event: string, cb: (...args: unknown[]) => void): void;
+    recoverMediaError(): void;
+    startLoad(): void;
+    destroy(): void;
+  };
+};
+
+function hlsApi(): HlsCtor | null {
+  const ctor = (window as unknown as { Hls?: HlsCtor }).Hls;
+  return ctor && ctor.isSupported() ? ctor : null;
 }
 
 export function previewSrc(camera: Camera, bust?: number): string | undefined {
@@ -35,6 +61,7 @@ export default function GovPlayer({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const sid = sentinelId(camera);
+  const hlsSrc = hlsProxy(camera);
   const src = streamProxy(camera);
   const portal =
     typeof camera.extra?.portal === "string" ? camera.extra.portal.replace(/\/$/, "") : "";
@@ -61,43 +88,53 @@ export default function GovPlayer({
     if (!video || !sid) return;
     let cancelled = false;
 
-    async function start() {
-      const state = await fetch(`/api/v1/feeds/sentinel/${sid}/state`, {
-        credentials: "same-origin",
-      }).then((r) => (r.ok ? r.json() : null));
-      if (cancelled || !video) return;
-      const offset = Number(state?.slot_offset ?? state?.offset ?? 0);
-
-      const markReady = () => {
-        if ((video.videoWidth || 0) > 16) setVideoReady(true);
-      };
-
-      function playHttpFallback() {
-        if (!src) return;
-        video.src = src;
-        const onMeta = () => {
+    const markReady = () => {
+      if ((video.videoWidth || 0) > 16) setVideoReady(true);
+    };
+    const Hls = hlsApi();
+    let destroyHls: (() => void) | undefined;
+    if (Hls && hlsSrc) {
+      const hls = new Hls({
+        maxBufferLength: 6,
+        startPosition: -1,
+        xhrSetup: (xhr: XMLHttpRequest) => {
+          xhr.withCredentials = true;
+        },
+      });
+      hls.attachMedia(video);
+      hls.loadSource(hlsSrc);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!cancelled && autoPlay) video.play().catch(() => undefined);
+      });
+      hls.on(Hls.Events.FRAG_BUFFERED, markReady);
+      hls.on(Hls.Events.ERROR, (...args: unknown[]) => {
+        const data = args[1] as { fatal?: boolean; type?: string } | undefined;
+        if (!data?.fatal) return;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
           try {
-            if (offset && isFinite(video.duration) && video.duration > 1) {
-              video.currentTime = offset % video.duration;
-            }
+            hls.recoverMediaError();
           } catch {
-            /* live RTSP/HLS has no seek; HTTP /stream is a looping file */
+            /* recover is best-effort */
           }
-          if (autoPlay) video.play().catch(() => undefined);
-        };
-        video.addEventListener("loadedmetadata", onMeta, { once: true });
-        video.addEventListener("playing", markReady);
-      }
-
-      playHttpFallback();
+        }
+      });
+      destroyHls = () => hls.destroy();
+    } else if (hlsSrc && video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = hlsSrc;
+      video.addEventListener("playing", markReady);
+      if (autoPlay) video.play().catch(() => undefined);
+    } else if (src) {
+      video.src = src;
+      video.addEventListener("playing", markReady);
+      if (autoPlay) video.play().catch(() => undefined);
     }
-    start();
     return () => {
       cancelled = true;
+      destroyHls?.();
       video.removeAttribute("src");
       video.load();
     };
-  }, [sid, src, autoPlay]);
+  }, [sid, hlsSrc, src, autoPlay]);
 
   const bbox = live?.bbox;
 

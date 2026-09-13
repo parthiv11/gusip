@@ -5,7 +5,7 @@ import json
 
 import httpx
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from jose import JWTError
+from jwt import PyJWTError as JWTError
 from sqlalchemy import select
 
 from app.config import get_settings

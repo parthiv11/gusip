@@ -63,14 +63,8 @@ export default function CameraTile({
           }}
         />
       ) : (
-        <video
-          src="/api/v1/feeds/demo/loop"
-          muted
-          loop
-          playsInline
-          autoPlay
-          aria-hidden
-          className="absolute inset-0 w-full h-full object-cover opacity-80"
+        <div
+          className="absolute inset-0"
           style={{
             background: `radial-gradient(circle at 30% 20%, hsl(${hue} 20% 18%), #070b12)`,
           }}

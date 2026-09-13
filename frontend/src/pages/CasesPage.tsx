@@ -19,7 +19,11 @@ export default function CasesPage() {
   const [error, setError] = useState("");
 
   async function load() {
-    setRows(await api<CaseRow[]>("/api/v1/cases"));
+    try {
+      setRows(await api<CaseRow[]>("/api/v1/cases"));
+    } catch (err) {
+      setError(String(err));
+    }
   }
   useEffect(() => {
     load();
@@ -51,13 +55,19 @@ export default function CasesPage() {
   }
 
   async function exp(id: number) {
-    const data = await api(`/api/v1/cases/${id}/export`);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gusip-case-${id}.json`;
-    a.click();
+    setError("");
+    try {
+      const data = await api(`/api/v1/cases/${id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gusip-case-${id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(String(err));
+    }
   }
 
   return (

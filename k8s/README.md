@@ -38,3 +38,11 @@ See `docs/scalability.md`: ~400–800 GPU workers, 12–24 API pods, Kafka RF=3.
 3. Set `MINIO_ENDPOINT` to a TLS S3/Object-Lock service and `MINIO_SECURE=true`. The production guard intentionally refuses the bundled cleartext MinIO settings.
 4. Images `gusip-backend:prod` / `gusip-frontend:prod` from your registry.
 5. Apply the migration Job before rolling application Deployments; production application startup never calls `create_all`.
+
+## Postgres HA (not applied by default)
+
+`data.yaml`'s `postgres` StatefulSet is a single instance protected only by a PodDisruptionBudget (no replication, no failover) — acceptable for the PoC, not for a real "state loses one AZ and keeps running" deployment. `postgres-ha.yaml` has a CloudNativePG-based 3-instance alternative with a documented migration path; it is intentionally left out of `kustomization.yaml` and unvalidated against a live cluster (none is available from this repo's sandbox) — read the comments at the top of that file before adopting it.
+
+## Backups
+
+`backup.yaml` runs a nightly (02:00) `pg_dump` → MinIO CronJob, independent of the `DETECTION_RETENTION_DAYS` sweep the backend/worker run for raw DetectionEvent/TrackPoint rows (`app.services.retention`). Restore path and the docker-compose equivalent are in `docs/deployment.md` §5.

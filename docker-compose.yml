@@ -94,14 +94,17 @@ services:
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost
       SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
       INFERENCE_MODE: ${INFERENCE_MODE:-simulate}
-      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://live.corp8.cloud}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://cctv.corp8.cloud}
       SENTINEL_ENABLED: ${SENTINEL_ENABLED:-true}
       SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
       SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
       SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
-      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud}
+      SENTINEL_RTSP_HOST: ${SENTINEL_RTSP_HOST:-103.250.160.189}
+      SENTINEL_EMAIL: ${SENTINEL_EMAIL:-}
+      SENTINEL_PASSWORD: ${SENTINEL_PASSWORD:-}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud,stream.corp8.cloud,103.250.160.189}
       SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
-      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
+      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://cctv.corp8.cloud/}
       OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
     ports:
       - "8000:8000"
@@ -151,14 +154,17 @@ services:
       SIMULATION_ENABLED: ${SIMULATION_ENABLED:-true}
       INFERENCE_MODE: ${WORKER_INFERENCE_MODE:-yolo}
       USE_KAFKA: "false"
-      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://live.corp8.cloud}
+      SENTINEL_BASE_URL: ${SENTINEL_BASE_URL:-https://cctv.corp8.cloud}
       SENTINEL_ENABLED: ${SENTINEL_ENABLED:-true}
       SENTINEL_ANPR_ENABLED: ${SENTINEL_ANPR_ENABLED:-true}
       SENTINEL_ANPR_INTERVAL_S: ${SENTINEL_ANPR_INTERVAL_S:-10}
       SENTINEL_RTSP_ENABLED: ${SENTINEL_RTSP_ENABLED:-true}
-      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud}
+      SENTINEL_RTSP_HOST: ${SENTINEL_RTSP_HOST:-103.250.160.189}
+      SENTINEL_EMAIL: ${SENTINEL_EMAIL:-}
+      SENTINEL_PASSWORD: ${SENTINEL_PASSWORD:-}
+      SENTINEL_ALLOWED_HOSTS: ${SENTINEL_ALLOWED_HOSTS:-live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud,stream.corp8.cloud,103.250.160.189}
       SENTINEL_USER_AGENT: ${SENTINEL_USER_AGENT:-Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)}
-      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://sentinel.gujarat.gov.in/resource}
+      SENTINEL_REFERER: ${SENTINEL_REFERER:-https://cctv.corp8.cloud/}
       SENTINEL_LOCAL_RTSP_URL: ${SENTINEL_LOCAL_RTSP_URL:-rtsp://mediamtx:8554}
       OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
     depends_on:

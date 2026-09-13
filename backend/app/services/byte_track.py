@@ -90,6 +90,18 @@ class CameraTracker:
         self.tracks = []
 
 
+# Deliberately process-local, unlike sentinel_auth's session cache or
+# inference._face_rate_limited: CameraTracker.update() re-runs IoU matching
+# against every live track on every single frame, so it needs the full track
+# list in memory on a low-latency hot path — round-tripping that to Redis per
+# frame would hurt latency, and two workers racing on the same camera's state
+# could corrupt track IDs (which the Investigate/GIS trail feature relies on
+# for continuity). Safe today because one worker process handles every camera
+# sequentially. If gpu-worker.yaml's replicas ever load-balance frames for the
+# same camera across pods, the correct fix is sticky camera->worker assignment
+# (e.g. consistent hashing / partitioning), not moving this state to a shared
+# store — that needs its own design and a real multi-replica test, not a
+# same-session patch.
 _cameras: dict[str, CameraTracker] = {}
 
 

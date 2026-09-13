@@ -95,9 +95,19 @@ Adapters never require inbound connections from the internet. They push events o
 
 ## 5. Backup
 
-- PostgreSQL: WAL + nightly logical dump of registry, watchlist, alerts, audit
-- Object store: versioned bucket, 90-day lifecycle on snapshots, legal-hold on case clips
+- PostgreSQL: nightly logical dump (`pg_dump -Fc`), 30-day retention.
+  - k8s: `k8s/backup.yaml` — a CronJob (02:00 daily) that dumps to an emptyDir then uploads to the MinIO/S3 `gusip-backups/postgres/` bucket via `mc`.
+  - Compose/PoC: `scripts/backup_postgres.sh` (schedule with host cron/systemd-timer); restore with `scripts/restore_postgres.sh <dump-file>` (destructive — stops backend/worker, `pg_restore --clean`, restarts them).
+  - WAL archiving/PITR is not implemented — the nightly dump is the only recovery point; add `archive_command` + a WAL-shipping sidecar if point-in-time recovery is required.
+- Object store: raw DetectionEvent/TrackPoint rows and their snapshot files are purged automatically after `DETECTION_RETENTION_DAYS` (default 90) by `app.services.retention.purge_expired`, run hourly-checked/daily-swept by the worker (`RETENTION_SWEEP_INTERVAL_HOURS`) and triggerable on demand via `POST /api/v1/admin/retention/run`. Alerts and anything an Alert still references are never auto-purged — that retention window is a legal/departmental policy decision (see docs/security.md §7), not one the sweep makes.
 - Redis/Kafka: treated as ephemeral; reconstruct from DB if needed
+
+## 5a. Observability
+
+- Logs: JSON (log aggregator) or human-readable text — `LOG_JSON=true`/`LOG_LEVEL`. Every line carries a `request_id`, propagated end to end via the `X-Request-ID` response header, so one request's log lines correlate across whichever backend/worker replica handled it.
+- Metrics: `GET /metrics` (Prometheus text format) — `gusip_http_requests_total{method,path,status}` and `gusip_http_request_duration_seconds{method,path}`, plus default Python process/GC metrics. In k8s, restrict scrape access via the `monitoring` namespace allowance in `k8s/networking.yaml`'s `backend` NetworkPolicy (adjust the label to your Prometheus install's namespace).
+- Health vs readiness: `GET /health` is pure liveness (no dependency calls — never restart a pod over a transient DB blip); `GET /ready` actually checks Postgres + Redis and returns 503 if either is down, so a pod that can't serve traffic gets pulled from rotation instead of receiving requests it will fail.
+- Still missing: distributed tracing (OpenTelemetry) and an error-tracking integration (e.g. Sentry) — logs + metrics cover request-level visibility but not automatic exception aggregation or cross-service trace spans.
 
 ## 6. Demo checklist
 

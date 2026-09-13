@@ -7,3 +7,4 @@ resources:
   - apps.yaml
   - networking.yaml
   - autoscaling.yaml
+  - backup.yaml

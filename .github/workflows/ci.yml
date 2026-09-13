@@ -29,6 +29,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check backend/app --select E9,F
+      - run: pip install pip-audit
+      - name: Python dependency audit (advisory — see known findings before making this blocking)
+        # Currently non-blocking: backend/requirements.txt has ~49 known CVEs across
+        # starlette/cryptography/python-jose/python-multipart/orjson/pytest/ecdsa as of
+        # this writing. Fix those and drop continue-on-error to make this a real gate.
+        continue-on-error: true
+        run: pip-audit --requirement backend/requirements.txt
       - name: Build hardened backend
         run: docker build --tag gusip-backend:ci backend
       - name: Run backend tests

@@ -141,9 +141,11 @@ export default function ControlRoom() {
   const [page, setPage] = useState(0);
   const [stats, setStats] = useState<Record<string, number>>({});
   const [syncMsg, setSyncMsg] = useState("");
+  const [syncFailed, setSyncFailed] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<number | null>(null);
   const [soundOn, setSoundOn] = useState(() => localStorage.getItem("gusip.alertSound") !== "off");
+  const [loadError, setLoadError] = useState(false);
   const camerasRef = useRef<Camera[]>([]);
   const selectedRef = useRef<Camera | null>(null);
   const wallRef = useRef<Wall>(wall);
@@ -180,16 +182,21 @@ export default function ControlRoom() {
   const slice = useMemo(() => filtered.slice(page * pageSize, page * pageSize + pageSize), [filtered, page, pageSize]);
 
   async function loadCameras() {
-    const c = await api<Camera[]>("/api/v1/cameras");
-    setCameras(c);
-    setSelected((prev) => {
-      if (prev) {
-        const fresh = c.find((x) => x.id === prev.id);
-        if (fresh) return fresh;
-      }
-      const gov = c.find((x) => x.source_type === "sentinel");
-      return gov ?? c[0] ?? null;
-    });
+    try {
+      const c = await api<Camera[]>("/api/v1/cameras");
+      setLoadError(false);
+      setCameras(c);
+      setSelected((prev) => {
+        if (prev) {
+          const fresh = c.find((x) => x.id === prev.id);
+          if (fresh) return fresh;
+        }
+        const gov = c.find((x) => x.source_type === "sentinel");
+        return gov ?? c[0] ?? null;
+      });
+    } catch {
+      setLoadError(true);
+    }
   }
 
   function focusAlert(
@@ -222,6 +229,23 @@ export default function ControlRoom() {
     if (idx >= 0) setPage(Math.floor(idx / pageSize));
   }, [focusId, filtered, pageSize]);
 
+  // Jump to a specific camera when arriving via ?camera=<id> (e.g. "View live feed" from the camera registry).
+  useEffect(() => {
+    const requested = params.get("camera");
+    if (!requested || cameras.length === 0) return;
+    const cam = cameras.find((c) => String(c.id) === requested);
+    if (cam) focusAlert(cam.id, cam.source_type);
+    setParams(
+      (p) => {
+        const copy = new URLSearchParams(p);
+        copy.delete("camera");
+        return copy;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameras]);
+
   useEffect(() => {
     loadCameras();
     api<Alert[]>("/api/v1/alerts?limit=80").then((rows) => setAlerts(coalesceInbox(rows)));
@@ -233,13 +257,14 @@ export default function ControlRoom() {
     const t = window.setInterval(() => {
       api<Camera[]>("/api/v1/cameras")
         .then((c) => {
+          setLoadError(false);
           setCameras(c);
           setSelected((prev) => {
             if (!prev) return prev;
             return c.find((x) => x.id === prev.id) ?? prev;
           });
         })
-        .catch(() => undefined);
+        .catch(() => setLoadError(true));
     }, 15000);
     return () => window.clearInterval(t);
   }, []);
@@ -312,11 +337,13 @@ export default function ControlRoom() {
 
   async function syncGov() {
     setSyncMsg("Syncing…");
+    setSyncFailed(false);
     try {
       const r = await api<{ synced: number }>("/api/v1/feeds/sentinel/sync", { method: "POST" });
       setSyncMsg(`${r.synced} government feeds onboarded`);
       await loadCameras();
     } catch (e) {
+      setSyncFailed(true);
       setSyncMsg(String(e));
     }
   }
@@ -386,8 +413,11 @@ export default function ControlRoom() {
         Sound {soundOn ? "on" : "off"}
       </button>
       {syncMsg && (
-        <span className="text-orange-300/90 truncate max-w-[16rem]" role="status">
-          {syncMsg}
+        <span
+          className={`truncate max-w-[16rem] ${syncFailed ? "text-red-300 font-semibold" : "text-orange-300/90"}`}
+          role={syncFailed ? "alert" : "status"}
+        >
+          {syncFailed ? `Sync failed: ${syncMsg}` : syncMsg}
         </span>
       )}
       <div className="ml-auto flex items-center gap-1 font-mono text-slate-400">
@@ -432,10 +462,17 @@ export default function ControlRoom() {
       className="h-full min-h-0 overflow-auto p-0.5 grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 content-start gap-2"
     >
       {slice.length === 0 ? (
-        <div className="col-span-full m-3 rounded border border-white/10 bg-ink-900 px-3 py-4 text-xs text-slate-400">
-          {wall === "gov"
-            ? "No government Sentinel cameras in this session. Sign in again or use Sync Sentinel (coordinator/admin)."
-            : "No cameras in this view."}
+        <div
+          role={loadError ? "alert" : undefined}
+          className={`col-span-full m-3 rounded border px-3 py-4 text-xs ${
+            loadError ? "border-red-500/50 bg-red-950/40 text-red-200" : "border-white/10 bg-ink-900 text-slate-400"
+          }`}
+        >
+          {loadError
+            ? "Camera feed unavailable — could not reach the backend. Retrying automatically."
+            : wall === "gov"
+              ? "No government Sentinel cameras in this session. Sign in again or use Sync Sentinel (coordinator/admin)."
+              : "No cameras in this view."}
         </div>
       ) : (
         slice.map((c) => (

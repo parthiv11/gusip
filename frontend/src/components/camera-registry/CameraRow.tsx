@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MoreVertical, Play, Settings, Activity, Copy, Check } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { MoreVertical, Play, Copy, Check } from "lucide-react";
 import { RegistryCamera } from "./cameraData";
 import { SourceBadge } from "./SourceBadge";
 import { StatusIndicator } from "./StatusIndicator";
@@ -17,6 +18,7 @@ export const CameraRow: React.FC<CameraRowProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLTableCellElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -24,8 +26,15 @@ export const CameraRow: React.FC<CameraRowProps> = ({
         setMenuOpen(false);
       }
     }
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const handleCopy = async () => {
@@ -93,39 +102,35 @@ export const CameraRow: React.FC<CameraRowProps> = ({
           onClick={() => setMenuOpen(!menuOpen)}
           className="p-1 rounded text-[#6F7D91] hover:text-[#F2F4F7] hover:bg-white/[0.06] transition-colors inline-flex items-center justify-center"
           title="Actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
         >
           <MoreVertical size={15} />
         </button>
 
         {menuOpen && (
-          <div className="absolute right-4 mt-1 w-44 bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50 text-left animate-in fade-in zoom-in-95 duration-100">
+          <div
+            role="menu"
+            className="absolute right-4 mt-1 w-44 bg-[#0D1219] border border-white/[0.12] rounded-[6px] shadow-2xl py-1 z-50 text-left animate-in fade-in zoom-in-95 duration-100"
+          >
             <button
-              onClick={() => setMenuOpen(false)}
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                navigate(`/?camera=${camera.id}`);
+              }}
               className="w-full px-3 py-1.5 text-xs text-[#A8B2C1] hover:text-[#F2F4F7] hover:bg-white/[0.05] flex items-center gap-2"
             >
               <Play size={13} className="text-[#D9A441]" />
               <span>View live feed</span>
             </button>
             <button
+              role="menuitem"
               onClick={handleCopy}
               className="w-full px-3 py-1.5 text-xs text-[#A8B2C1] hover:text-[#F2F4F7] hover:bg-white/[0.05] flex items-center gap-2"
             >
               {copied ? <Check size={13} className="text-[#35D58A]" /> : <Copy size={13} />}
               <span>{copied ? "Copied camera code" : "Copy camera code"}</span>
-            </button>
-            <button
-              onClick={() => setMenuOpen(false)}
-              className="w-full px-3 py-1.5 text-xs text-[#A8B2C1] hover:text-[#F2F4F7] hover:bg-white/[0.05] flex items-center gap-2"
-            >
-              <Activity size={13} />
-              <span>Diagnostics</span>
-            </button>
-            <button
-              onClick={() => setMenuOpen(false)}
-              className="w-full px-3 py-1.5 text-xs text-[#A8B2C1] hover:text-[#F2F4F7] hover:bg-white/[0.05] flex items-center gap-2 border-t border-white/[0.06]"
-            >
-              <Settings size={13} />
-              <span>Camera config</span>
             </button>
           </div>
         )}

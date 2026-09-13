@@ -44,7 +44,7 @@ function toCard(a: Alert): OperationalAlert {
     trackId: String(track),
     hits: Number.isFinite(hits) && hits > 0 ? hits : 1,
     timestamp: new Date(a.timestamp).toLocaleTimeString("en-IN", { hour12: false }),
-    evidenceImage: snapSrc(a.snapshot_url) || "/assets/alert_fortuner.jpg",
+    evidenceImage: snapSrc(a.snapshot_url) ?? null,
     acknowledged: a.status === "acknowledged",
   };
 }

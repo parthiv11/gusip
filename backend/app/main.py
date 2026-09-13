@@ -2,19 +2,24 @@ from contextlib import asynccontextmanager
 
 import asyncio
 import hmac
+import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api import admin, alerts, auth, cameras, cases, evidence, feeds, gis, ingest, integrations, search, watchlist, ws
 from app.config import get_settings
 from sqlalchemy import text
 from app.db import Base, engine, SessionLocal
+from app.core.logging import configure_logging, request_id_var
+from app.core.metrics import REQUEST_LATENCY, REQUESTS_TOTAL, render_metrics
 from app.services.event_bus import bus
 from app.services.matching import collapse_duplicate_open_alerts
 
 settings = get_settings()
+configure_logging("api")
 
 
 @asynccontextmanager
@@ -70,6 +75,27 @@ async def csrf_protection(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def observability(request: Request, call_next):
+    """Assigns/propagates a request ID (for cross-log correlation) and records
+    Prometheus request-count/latency metrics. Registered last so it wraps
+    every other middleware and runs first-in/last-out."""
+    req_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    token = request_id_var.set(req_id)
+    start = time.perf_counter()
+    try:
+        response: Response = await call_next(request)
+    finally:
+        request_id_var.reset(token)
+    duration = time.perf_counter() - start
+    route = request.scope.get("route")
+    path_label = route.path if route is not None else request.url.path
+    REQUESTS_TOTAL.labels(request.method, path_label, str(response.status_code)).inc()
+    REQUEST_LATENCY.labels(request.method, path_label).observe(duration)
+    response.headers["X-Request-ID"] = req_id
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -95,7 +121,33 @@ app.include_router(ws.router)
 
 @app.get("/health")
 async def health():
+    """Liveness: is the process up. Does not touch dependencies — see /ready."""
     return {"status": "ok", "service": "gusip-api", "env": settings.app_env}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness: can this instance actually serve traffic (DB + Redis reachable)."""
+    checks: dict[str, str] = {}
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:  # noqa: BLE001 — surfaced to the caller, not swallowed
+        checks["database"] = f"error: {exc}"
+    try:
+        await bus.r.ping()
+        checks["redis"] = "ok"
+    except Exception as exc:  # noqa: BLE001
+        checks["redis"] = f"error: {exc}"
+    ok = all(v == "ok" for v in checks.values())
+    return JSONResponse(status_code=200 if ok else 503, content={"status": "ok" if ok else "unready", "checks": checks})
+
+
+@app.get("/metrics")
+async def metrics():
+    body, content_type = render_metrics()
+    return Response(content=body, media_type=content_type)
 
 
 @app.get("/api/v1/meta")

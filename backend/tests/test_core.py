@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
 from uuid import uuid4
+import json
 import time
 
 import numpy as np
@@ -71,6 +72,45 @@ async def test_oidc_login_uses_pkce_and_transient_http_only_cookies():
     assert all("HttpOnly" in cookie and "Secure" in cookie for cookie in cookies)
 
 
+async def test_oidc_token_decode_via_jwks_rs256():
+    """Covers the PyJWT/PyJWK RS256 path in core.security.decode_access_token —
+    migrated off python-jose (unmaintained, multiple unfixed CVEs including one
+    via its ecdsa dependency); this path had no direct test before."""
+    import jwt as pyjwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from app.core import security
+
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_jwk = json.loads(pyjwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key()))
+    public_jwk.update({"kid": "test-kid", "use": "sig", "kty": "RSA"})
+
+    old_provider = security.settings.auth_provider
+    old_audience = security.settings.oidc_audience
+    old_issuer = security.settings.oidc_issuer
+    security.settings.auth_provider = "oidc"
+    security.settings.oidc_audience = "gusip"
+    security.settings.oidc_issuer = "https://id.example.in/realms/gusip"
+    security._jwks_cache = (time.monotonic() + 300, {"keys": [public_jwk]})
+    try:
+        token = pyjwt.encode(
+            {"sub": "12345", "role": "control_room_operator", "aud": "gusip", "iss": "https://id.example.in/realms/gusip"},
+            private_key,
+            algorithm="RS256",
+            headers={"kid": "test-kid"},
+        )
+        claims = await security.decode_access_token(token)
+        assert claims["sub"] == "12345"
+
+        with pytest.raises(security.JWTError):
+            await security.decode_access_token(token + "tampered")
+    finally:
+        security.settings.auth_provider = old_provider
+        security.settings.oidc_audience = old_audience
+        security.settings.oidc_issuer = old_issuer
+        security._jwks_cache = None
+
+
 def test_ingest_envelope_forbids_adapter_media_urls():
     payload = {
         "adapter_id": "dept-a",
@@ -97,6 +137,30 @@ def test_sentinel_allowlist_includes_cctv_redirect_host(monkeypatch):
     fresh = Settings(_env_file=None, sentinel_allowed_hosts=default_hosts)
     monkeypatch.setattr(sen, "settings", fresh)
     assert sen.validate_sentinel_url("https://cctv.corp8.cloud/stream/1") == "https://cctv.corp8.cloud/stream/1"
+
+
+def test_grid_cameras_json_builds_contract_urls(monkeypatch):
+    from app.config import Settings
+    from app.services import sentinel_auth
+    from app.workers import sentinel as sen
+
+    fresh = Settings(
+        _env_file=None,
+        sentinel_base_url="https://cctv.corp8.cloud",
+        sentinel_email="alice@example.com",
+        sentinel_password="GRID-KEY",
+        sentinel_rtsp_host="103.250.160.189",
+        sentinel_allowed_hosts="cctv.corp8.cloud,103.250.160.189",
+    )
+    monkeypatch.setattr(sen, "settings", fresh)
+    monkeypatch.setattr(sentinel_auth, "get_settings", lambda: fresh)
+    row = sen.normalize_camera({"id": "cam04", "name": "04 Test"}, base_url="https://cctv.corp8.cloud")
+    assert row["id"] == "cam04"
+    assert row["live"] is True
+    assert row["hls_url"] == "https://cctv.corp8.cloud/cam04/index.m3u8"
+    assert row["rtsp_url"] == "rtsp://alice%40example.com:GRID-KEY@103.250.160.189:8554/stream/cam04"
+    assert row["whep_url"] == "http://alice%40example.com:GRID-KEY@103.250.160.189:8889/stream/cam04/whep"
+    sen.validate_sentinel_url(row["rtsp_url"], frozenset({"rtsp"}))
 
 
 def test_still_loop_requires_preview_jpeg(tmp_path, monkeypatch):
@@ -446,7 +510,7 @@ def test_sentinel_ingest_catalogue_shape():
     assert row["rtsp_url"].startswith("rtsp://")
     assert row["whep_url"].endswith("/whep")
     assert row["hls_url"] == "https://live.corp8.cloud/live/stream/1/index.m3u8"
-    assert row["stream_url"].endswith("/stream/1")
+    assert row["stream_url"].endswith("/1/index.m3u8")
     assert inference_url(row) == row["rtsp_url"]
     assert inference_url({"hls_url": row["hls_url"], "stream_url": row["stream_url"]}) == row["hls_url"]
     assert inference_url({"stream_url": row["stream_url"]}) is None
@@ -681,3 +745,210 @@ def test_arcface_status_reports_engine():
     assert status["engine"] == "arcface"
     assert status["model"] == "buffalo_l"
     assert "ready" in status
+
+
+async def test_retention_purges_old_unreferenced_events_only():
+    """Old events survive if an Alert still references them; unreferenced old
+    events (and their snapshot files) are purged; recent events always survive."""
+    from datetime import datetime, timedelta, timezone
+
+    from geoalchemy2.elements import WKTElement
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models.camera import Camera, Department
+    from app.models.event import Alert, DetectionEvent
+    from app.models.watchlist import WatchlistEntry
+    from app.services.retention import purge_expired
+    from app.services.storage import DATA_DIR
+
+    now = datetime.now(timezone.utc)
+    old = now - timedelta(days=200)
+    recent = now - timedelta(days=1)
+
+    (DATA_DIR / "snapshots").mkdir(parents=True, exist_ok=True)
+    snap_path = DATA_DIR / "snapshots" / "retention-test.enc"
+    snap_path.write_bytes(b"fake")
+    snapshot_url = "/api/v1/evidence/snapshots/retention-test.enc"
+
+    async with SessionLocal() as db:
+        dept = Department(code="RET-TEST", name="Retention Test", zone="Test")
+        db.add(dept)
+        await db.flush()
+        cam = Camera(
+            code="RET-CAM-01",
+            name="Retention Test Cam",
+            department_id=dept.id,
+            camera_type="ip",
+            ownership="own",
+            source_type="rtsp",
+            location=WKTElement("POINT(72.5 23.0)", srid=4326),
+            latitude=23.0,
+            longitude=72.5,
+            city="Test City",
+        )
+        db.add(cam)
+        wl = WatchlistEntry(entity_type="vehicle", category="stolen_vehicle", plate_number="RT0001")
+        db.add(wl)
+        await db.flush()
+
+        old_unreferenced = DetectionEvent(
+            camera_id=cam.id, timestamp=old, event_type="detection", object_type="vehicle",
+            snapshot_url=snapshot_url,
+        )
+        old_referenced = DetectionEvent(
+            camera_id=cam.id, timestamp=old, event_type="detection", object_type="vehicle",
+        )
+        recent_event = DetectionEvent(
+            camera_id=cam.id, timestamp=recent, event_type="detection", object_type="vehicle",
+        )
+        db.add_all([old_unreferenced, old_referenced, recent_event])
+        await db.flush()
+
+        alert = Alert(
+            event_id=old_referenced.id, watchlist_id=wl.id, camera_id=cam.id,
+            timestamp=old, confidence=0.9,
+        )
+        db.add(alert)
+        await db.commit()
+
+        old_unreferenced_id, old_referenced_id, recent_id = (
+            old_unreferenced.id,
+            old_referenced.id,
+            recent_event.id,
+        )
+
+    try:
+        result = await purge_expired(now=now)
+        assert result["events_deleted"] == 1
+        assert result["files_deleted"] == 1
+        assert not snap_path.exists()
+
+        async with SessionLocal() as db:
+            remaining = set((await db.execute(select(DetectionEvent.id))).scalars().all())
+        assert old_unreferenced_id not in remaining
+        assert old_referenced_id in remaining
+        assert recent_id in remaining
+    finally:
+        async with SessionLocal() as db:
+            await db.execute(select(Alert).where(Alert.camera_id == cam.id))
+            for row in list((await db.execute(select(Alert).where(Alert.camera_id == cam.id))).scalars()):
+                await db.delete(row)
+            for row in list((await db.execute(select(DetectionEvent).where(DetectionEvent.camera_id == cam.id))).scalars()):
+                await db.delete(row)
+            cam_row = await db.get(Camera, cam.id)
+            if cam_row:
+                await db.delete(cam_row)
+            wl_row = await db.get(WatchlistEntry, wl.id)
+            if wl_row:
+                await db.delete(wl_row)
+            dept_row = await db.get(Department, dept.id)
+            if dept_row:
+                await db.delete(dept_row)
+            await db.commit()
+        snap_path.unlink(missing_ok=True)
+
+
+# --- HTTP-level integration tests -------------------------------------------
+# Everything above is unit-level (imports functions/classes directly). These
+# instead drive the real FastAPI `app` — routing, middleware order (CSRF, the
+# request-ID/metrics observability middleware), and auth end to end — which
+# nothing else in this file previously covered. httpx.AsyncClient + ASGITransport
+# (not the sync TestClient) so these run on the same event loop as the async
+# tests above instead of spinning up their own — mixing the two against the
+# shared async engine/connection pool causes cross-event-loop asyncpg errors.
+
+from contextlib import AsyncExitStack
+
+from httpx import ASGITransport, AsyncClient
+
+
+async def _client_with_lifespan(stack: AsyncExitStack) -> AsyncClient:
+    """An AsyncClient against the real app, without running its full lifespan.
+
+    The app's lifespan (app.main.lifespan) does one-time startup work — create
+    the postgis extension/tables, seed built-in roles, warm up ArcFace in a
+    background thread, and start a Redis pub/sub relay task — none of which a
+    request-level test needs, since the schema/roles already exist in this
+    shared dev database from the running app and earlier tests. Actually
+    running it here also spawns background tasks that outlive a single test's
+    AsyncExitStack (the lifespan cancels but never awaits its relay task on
+    shutdown), which races with connection-pool cleanup across the tests in
+    this file and intermittently raises "attached to a different loop" /
+    "Event loop is closed" from asyncpg. bus.connect() is the one piece of
+    lifespan state /ready's Redis check actually needs.
+    """
+    from app.db import engine
+    from app.main import app
+    from app.services.event_bus import bus
+
+    # Each pytest-asyncio test gets its own event loop, but app.db.engine's
+    # connection pool is a module-level singleton — an idle pooled connection
+    # from a previous test's (now-closed) loop can otherwise get handed to
+    # this test, failing on close/cancel with "Event loop is closed". Dispose
+    # so this test's queries always open a fresh connection on its own loop.
+    await engine.dispose()
+    if bus._redis is None:
+        await bus.connect()
+    return await stack.enter_async_context(AsyncClient(transport=ASGITransport(app=app), base_url="http://test"))
+
+
+async def test_health_is_a_pure_liveness_check():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        r = await client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
+async def test_ready_checks_database_and_redis():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        r = await client.get("/ready")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["checks"]["database"] == "ok"
+    assert body["checks"]["redis"] == "ok"
+
+
+async def test_metrics_endpoint_exposes_prometheus_format():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        await client.get("/health")  # generate at least one observed request first
+        r = await client.get("/metrics")
+    assert r.status_code == 200
+    assert "gusip_http_requests_total" in r.text
+    assert "gusip_http_request_duration_seconds" in r.text
+
+
+async def test_request_id_is_generated_and_echoed():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        r = await client.get("/health")
+        assert r.headers.get("x-request-id")
+
+        r2 = await client.get("/health", headers={"X-Request-ID": "test-fixed-id"})
+        assert r2.headers["x-request-id"] == "test-fixed-id"
+
+
+async def test_protected_endpoint_rejects_missing_auth():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        r = await client.get("/api/v1/cameras")
+    assert r.status_code == 401
+
+
+async def test_login_then_authenticated_request_round_trip():
+    async with AsyncExitStack() as stack:
+        client = await _client_with_lifespan(stack)
+        login = await client.post(
+            "/api/v1/auth/token",
+            data={"username": "operator", "password": "GUSIP@ops2026"},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+
+        r = await client.get("/api/v1/cameras", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)

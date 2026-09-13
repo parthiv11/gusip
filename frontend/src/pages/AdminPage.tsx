@@ -354,7 +354,10 @@ export default function AdminPage() {
                       <button
                         type="button"
                         className={`px-2 py-1 rounded border ${u.is_active ? "border-emerald-500/40 text-emerald-300" : "border-white/15 text-slate-500"}`}
-                        onClick={() => patchUser(u.id, { is_active: !u.is_active })}
+                        onClick={() => {
+                          if (u.is_active && !window.confirm(`Deactivate ${u.username}? They will be signed out immediately.`)) return;
+                          patchUser(u.id, { is_active: !u.is_active });
+                        }}
                       >
                         {u.is_active ? "Active" : "Disabled"}
                       </button>

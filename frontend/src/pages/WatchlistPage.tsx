@@ -22,7 +22,11 @@ export default function WatchlistPage() {
   const [error, setError] = useState("");
 
   async function load() {
-    setRows(await api<Entry[]>("/api/v1/watchlist"));
+    try {
+      setRows(await api<Entry[]>("/api/v1/watchlist"));
+    } catch (err) {
+      setError(String(err));
+    }
   }
   useEffect(() => {
     load();
