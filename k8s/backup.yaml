@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gusip-backup-scripts
+  namespace: gusip
+  labels: { app.kubernetes.io/part-of: gusip }
+data:
+  dump.sh: |
+    #!/bin/sh
+    set -eu
+    STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    pg_dump -h postgres -U gusip -d gusip -Fc -f "/backup/gusip-${STAMP}.dump"
+    echo "dump written: gusip-${STAMP}.dump ($(du -h "/backup/gusip-${STAMP}.dump" | cut -f1))"
+  upload.sh: |
+    #!/bin/sh
+    set -eu
+    mc mb --ignore-existing gusip/gusip-backups/postgres
+    for f in /backup/*.dump; do
+      [ -e "$f" ] || continue
+      mc cp "$f" "gusip/gusip-backups/postgres/$(basename "$f")"
+    done
+    # Dumps are a disaster-recovery copy, not the evidence record itself — keep
+    # 30 days. Object-store evidence (snapshots) has its own 90-day lifecycle
+    # per docs/deployment.md; these two windows are intentionally independent.
+    mc ilm rule add gusip/gusip-backups --prefix postgres/ --expire-days 30 2>/dev/null || true
+    echo "backup uploaded to gusip-backups/postgres/"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: gusip-postgres-backup
+  namespace: gusip
+  labels: { app.kubernetes.io/part-of: gusip }
+spec:
+  schedule: "0 2 * * *" # nightly 02:00 — pairs with WAL archiving for point-in-time recovery in between
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: { app: gusip-postgres-backup, app.kubernetes.io/part-of: gusip }
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: gusip
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          volumes:
+            - name: scripts
+              configMap: { name: gusip-backup-scripts, defaultMode: 0o555 }
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            - name: pg-dump
+              image: postgis/postgis:16-3.4
+              command: ["/bin/sh", "/scripts/dump.sh"]
+              env:
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: gusip-secrets, key: POSTGRES_PASSWORD } }
+              volumeMounts:
+                - { name: scripts, mountPath: /scripts }
+                - { name: dump, mountPath: /backup }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+          containers:
+            - name: upload-to-minio
+              image: minio/mc:latest
+              command: ["/bin/sh", "/scripts/upload.sh"]
+              env:
+                - name: MINIO_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: gusip-secrets, key: MINIO_ACCESS_KEY } }
+                - name: MINIO_SECRET_KEY
+                  valueFrom: { secretKeyRef: { name: gusip-secrets, key: MINIO_SECRET_KEY } }
+                # `mc` auto-configures an alias named "gusip" from this URL — no `mc alias set` step needed.
+                - name: MC_HOST_gusip
+                  value: "http://$(MINIO_ACCESS_KEY):$(MINIO_SECRET_KEY)@minio:9000"
+              volumeMounts:
+                - { name: scripts, mountPath: /scripts }
+                - { name: dump, mountPath: /backup }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }

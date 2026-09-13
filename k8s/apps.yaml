@@ -80,9 +80,13 @@ spec:
             periodSeconds: 5
             failureThreshold: 24
           readinessProbe:
-            httpGet: { path: /health, port: http }
+            # /ready checks Postgres + Redis so a pod that can't reach its
+            # dependencies is taken out of rotation instead of serving 5xx.
+            httpGet: { path: /ready, port: http }
             periodSeconds: 5
           livenessProbe:
+            # /health is a pure liveness check (no dependency calls) — a
+            # transient DB/Redis outage must not restart otherwise-healthy pods.
             httpGet: { path: /health, port: http }
             periodSeconds: 15
             timeoutSeconds: 3

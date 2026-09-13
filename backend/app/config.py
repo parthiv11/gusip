@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     app_name: str = "GUSIP"
     app_env: str = "poc"
+    log_json: bool = False
+    log_level: str = "INFO"
     secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
     access_token_expire_minutes: int = 480
     algorithm: str = "HS256"
@@ -54,14 +56,27 @@ class Settings(BaseSettings):
     encryption_key: str = "poc-dev-key-change-me-32bytes!!"
     adapter_keys_json: str = "{}"
     ingest_max_clock_skew_seconds: int = 300
-    sentinel_base_url: str = "https://live.corp8.cloud"
+    # docs/deployment.md §5 documents a 90-day object-store lifecycle for
+    # snapshots; this enforces the same window in code. 0 disables purging.
+    # Alerts (and any DetectionEvent an Alert still references) are never
+    # auto-purged here — retention for evidentiary/incident data is a
+    # legal/departmental policy call (see docs/security.md §7 DPDP checklist),
+    # not something this job decides unilaterally.
+    detection_retention_days: int = 90
+    retention_sweep_interval_hours: int = 24
+    sentinel_base_url: str = "https://cctv.corp8.cloud"
     sentinel_enabled: bool = True
     sentinel_anpr_enabled: bool = True
     sentinel_anpr_interval_s: float = 10.0
     sentinel_rtsp_enabled: bool = True
-    sentinel_allowed_hosts: str = "live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud"
+    sentinel_rtsp_host: str = "103.250.160.189"
+    sentinel_email: str = ""
+    sentinel_password: str = ""
+    sentinel_allowed_hosts: str = (
+        "live.sentinelgujarat.in,live.corp8.cloud,cctv.corp8.cloud,stream.corp8.cloud,103.250.160.189"
+    )
     sentinel_user_agent: str = "Mozilla/5.0 (compatible; GUSIP/1.0; Sentinel ingest)"
-    sentinel_referer: str = "https://sentinel.gujarat.gov.in/resource"
+    sentinel_referer: str = "https://cctv.corp8.cloud/"
     # Internal MediaMTX that republishes catalogue HLS as RTSP when :8554 is not on the public host.
     sentinel_local_rtsp_url: str = ""
     face_enabled: bool = True

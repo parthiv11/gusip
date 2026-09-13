@@ -27,3 +27,5 @@ clips/
 snapshots/
 .coverage
 docs/submission/video-raw/
+backups/
+*.dump

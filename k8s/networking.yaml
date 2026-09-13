@@ -101,6 +101,9 @@ spec:
             matchLabels: { app: frontend }
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+        # /metrics scrape — adjust the namespace label to match your Prometheus install.
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
       ports:
         - protocol: TCP
           port: 8000
@@ -189,6 +192,8 @@ spec:
             matchLabels: { app: worker }
         - podSelector:
             matchLabels: { app: db-migrate }
+        - podSelector:
+            matchLabels: { app: gusip-postgres-backup }
       ports:
         - protocol: TCP
           port: 5432
@@ -213,3 +218,26 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gusip-postgres-backup
+  namespace: gusip
+spec:
+  podSelector:
+    matchLabels: { app: gusip-postgres-backup }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: postgres }
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels: { app: minio }
+      ports:
+        - protocol: TCP
+          port: 9000

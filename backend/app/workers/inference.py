@@ -14,11 +14,14 @@ import numpy as np
 from PIL import Image
 from sqlalchemy import select
 
+import redis
+
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models.camera import Camera
 from app.services.byte_track import tracker_for
 from app.services.pipeline import ingest_detection
+from app.services.redis_sync import get_sync_redis
 from app.services.scene import analyze_scene
 from app.services.storage import DATA_DIR
 from app.services.vision_attrs import enrich_detection
@@ -28,8 +31,31 @@ settings = get_settings()
 
 _model: Any = None
 PREVIEW_DIR = DATA_DIR / "previews"
+# Per-camera-track face-embedding debounce. Backed by Redis (SET NX EX), not a
+# process-local dict: gpu-worker runs multiple replicas (k8s/gpu-worker.yaml)
+# and a local dict would let each replica re-run the (expensive) embedding for
+# the same track independently instead of once fleet-wide every FACE_EVERY_S.
 _last_face_at: dict[str, float] = {}
 FACE_EVERY_S = 8.0
+
+
+def _face_rate_limited(key: str) -> bool:
+    """True if this camera/track successfully embedded a face within the last
+    FACE_EVERY_S — checked before the expensive embedding call, shared across
+    replicas via Redis so cooldown applies fleet-wide, not per-replica."""
+    try:
+        return bool(get_sync_redis().exists(f"facerl:{key}"))
+    except redis.RedisError:
+        return time.monotonic() - _last_face_at.get(key, 0.0) < FACE_EVERY_S
+
+
+def _mark_face_embedded(key: str) -> None:
+    """Start the cooldown — called only after a successful embed, matching the
+    original process-local behavior (a failed attempt does not cost the cooldown)."""
+    try:
+        get_sync_redis().set(f"facerl:{key}", "1", ex=int(FACE_EVERY_S))
+    except redis.RedisError:
+        _last_face_at[key] = time.monotonic()
 
 # person, bicycle, car, motorcycle, bus, truck
 YOLO_CLASSES = [0, 1, 2, 3, 5, 7]
@@ -221,8 +247,7 @@ def _maybe_embed_person(cam: Camera, det: dict[str, Any], jpeg: bytes) -> tuple[
     if not should_run_live_face(cam.source_type) or not arcface_ready():
         return None
     key = f"{cam.id}:{det.get('local_track_id') or 'loose'}"
-    now = time.monotonic()
-    if now - _last_face_at.get(key, 0.0) < FACE_EVERY_S:
+    if _face_rate_limited(key):
         return None
     crop = person_crop(jpeg, det)
     if crop is None:
@@ -236,7 +261,7 @@ def _maybe_embed_person(cam: Camera, det: dict[str, Any], jpeg: bytes) -> tuple[
         return None
     if not hit:
         return None
-    _last_face_at[key] = now
+    _mark_face_embedded(key)
     vec, meta = hit
     png = BytesIO()
     crop.save(png, format="PNG")

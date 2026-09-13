@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
+import json
 import time
 from typing import Annotated, Any
 
 import httpx
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jwt import PyJWTError as JWTError
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,13 +82,13 @@ async def decode_access_token(token: str) -> dict[str, Any]:
     key = next((item for item in jwks["keys"] if item.get("kid") == kid and item.get("kty") == "RSA"), None)
     if key is None:
         raise JWTError("OIDC signing key not found")
+    signing_key = jwt.PyJWK.from_json(json.dumps(key)).key
     return jwt.decode(
         token,
-        key,
+        key=signing_key,
         algorithms=["RS256"],
         audience=settings.oidc_audience,
         issuer=settings.oidc_issuer,
-        options={"verify_at_hash": False},
     )
 
 

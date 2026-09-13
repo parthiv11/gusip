@@ -125,7 +125,8 @@ def _download_buffalo() -> None:
         return
     url = _settings().face_pack_url
     log.info("Downloading ArcFace pack %s", url)
-    raw = urlopen(url, timeout=180).read()  # noqa: S310 — configured model URL
+    # url is FACE_PACK_URL, a deployment-time setting, not request input.
+    raw = urlopen(url, timeout=180).read()  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     with zipfile.ZipFile(BytesIO(raw)) as zf:
         for member in zf.namelist():
             name = Path(member).name

@@ -11,19 +11,21 @@ from pathlib import Path
 from sqlalchemy import select, text
 
 from app.config import get_settings
+from app.core.logging import configure_logging
 from app.db import SessionLocal, engine
 from app.models.camera import Camera
 from app.seed import seed
 from app.services.event_bus import bus
 from app.services.matching import collapse_duplicate_open_alerts
+from app.services.retention import purge_expired
 from app.workers.adapters import get_adapter
 from app.workers.simulator import Simulator
 from app.workers.inference import inference_available, yolo_preview_loop
 from app.workers.sentinel import anpr_loop, sync_loop
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("gusip.worker")
 settings = get_settings()
+configure_logging("worker")
+log = logging.getLogger("gusip.worker")
 HEARTBEAT_PATH = Path("/tmp/gusip-worker-heartbeat")
 
 
@@ -60,6 +62,16 @@ async def health_loop() -> None:
         await asyncio.sleep(15)
 
 
+async def retention_loop() -> None:
+    interval = max(1, settings.retention_sweep_interval_hours) * 3600
+    while True:
+        try:
+            await purge_expired()
+        except Exception:
+            log.exception("retention sweep failed")
+        await asyncio.sleep(interval)
+
+
 async def sim_loop() -> None:
     sim = Simulator()
     while True:
@@ -93,7 +105,7 @@ async def main() -> None:
         asyncio.create_task(asyncio.to_thread(warmup_arcface))
         log.info("ArcFace warmup scheduled")
     log.info("GUSIP worker started mode=%s kafka=%s sentinel=%s", settings.inference_mode, settings.use_kafka, settings.sentinel_enabled)
-    tasks = [asyncio.create_task(heartbeat_loop()), asyncio.create_task(health_loop())]
+    tasks = [asyncio.create_task(heartbeat_loop()), asyncio.create_task(health_loop()), asyncio.create_task(retention_loop())]
     if settings.simulation_enabled:
         tasks.append(asyncio.create_task(sim_loop()))
     if settings.sentinel_enabled:

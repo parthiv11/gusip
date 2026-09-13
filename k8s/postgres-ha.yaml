@@ -1,0 +1,73 @@
+# OPT-IN Postgres HA — NOT applied by default (not in kustomization.yaml) and
+# NOT validated against a live cluster from this repo's sandbox (no k8s
+# cluster available here to test failover against).
+#
+# k8s/data.yaml's `postgres` StatefulSet is a single instance: a PodDisruptionBudget
+# (k8s/autoscaling.yaml) stops it from being *voluntarily* evicted, but there is
+# no replication and no automatic failover — losing that one pod/node/volume
+# takes down every write path GUSIP has (alerts, watchlist, audit, cases).
+# Naively setting `replicas: 2+` on that StatefulSet would NOT fix this (two
+# independent Postgres instances writing to separate volumes would just
+# silently diverge, or fight over one RWO volume) — real HA needs streaming
+# replication with a failover-aware operator.
+#
+# This uses CloudNativePG (https://cloudnative-pg.io/), a CNCF-adjacent
+# operator, as a standard, well-documented way to get that. To adopt it:
+#   1. Install the CloudNativePG operator (its own installation step; not part
+#      of this manifest) and confirm this cluster actually has scheduling
+#      headroom for 3 Postgres instances at the requests below.
+#   2. Take a backup with scripts/backup_postgres.sh / k8s/backup.yaml.
+#   3. Apply this file, then use CNPG's `pg_dump`/logical-restore or its
+#      Database/Publication import support to load that backup into the new
+#      cluster (a fresh CNPG Cluster starts empty — this is a migration, not
+#      an in-place upgrade of the existing StatefulSet).
+#   4. Point DATABASE_URL/backend at the `postgres-ha-rw` Service instead of
+#      `postgres`, verify writes/reads, THEN remove the StatefulSet in
+#      k8s/data.yaml and its PVC.
+# Until you do that migration, keep using k8s/data.yaml's StatefulSet — do not
+# apply this file and the existing one at the same time expecting them to be
+# the same database.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-ha
+  namespace: gusip
+  labels: { app.kubernetes.io/part-of: gusip }
+spec:
+  instances: 3
+  # Official CloudNativePG-maintained image with PostGIS built in — matches
+  # the postgis/postgis:16-3.4 major version used by k8s/data.yaml.
+  imageName: ghcr.io/cloudnative-pg/postgis:16-3.4
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 200Gi
+  resources:
+    requests: { cpu: "2", memory: 4Gi }
+    limits: { cpu: "4", memory: 16Gi }
+  bootstrap:
+    initdb:
+      database: gusip
+      owner: gusip
+      secret:
+        name: gusip-secrets # must contain keys `username` and `password` for CNPG's format —
+        # see https://cloudnative-pg.io/documentation/current/bootstrap/#secrets — this
+        # is a DIFFERENT key shape than the plain POSTGRES_PASSWORD key data.yaml's
+        # StatefulSet uses, so double-check/adjust the secret before applying.
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS postgis;
+  postgresql:
+    parameters:
+      shared_buffers: "1GB"
+      max_connections: "200"
+  affinity:
+    podAntiAffinityType: required # spread the 3 instances across nodes, not just pods
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-ha
+  namespace: gusip
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { cnpg.io/cluster: postgres-ha }

@@ -106,6 +106,33 @@ async def stats(
     }
 
 
+@router.post("/retention/run")
+async def run_retention_sweep(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[User, Depends(require_capability("manage_roles"))],
+):
+    """Run the detection-event/track-point purge immediately (super-admin only).
+
+    Never deletes Alerts or their linked evidence — see app.services.retention.
+    """
+    from app.services.retention import purge_expired
+
+    result = await purge_expired()
+    await write_audit(
+        db,
+        user_id=admin.id,
+        username=admin.username,
+        action="run_retention_sweep",
+        resource="retention",
+        details=result,
+        ip_address=client_ip(request),
+        department_id=admin.department_id,
+    )
+    await db.commit()
+    return result
+
+
 class RoleIn(BaseModel):
     slug: str | None = None
     name: str = Field(min_length=2, max_length=128)

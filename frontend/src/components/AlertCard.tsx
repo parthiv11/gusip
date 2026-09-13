@@ -1,5 +1,5 @@
 import React from "react";
-import { Check } from "lucide-react";
+import { Check, ImageOff } from "lucide-react";
 
 export type AlertSeverity = "stolen" | "wanted" | "blacklisted" | "activity";
 
@@ -13,7 +13,7 @@ export interface OperationalAlert {
   trackId: string;
   hits: number;
   timestamp: string;
-  evidenceImage: string;
+  evidenceImage: string | null;
   acknowledged: boolean;
 }
 
@@ -22,6 +22,13 @@ interface AlertCardProps {
   onAcknowledge: (id: number) => void;
   onClick?: () => void;
 }
+
+const NoEvidencePlaceholder: React.FC = () => (
+  <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-[#5A6472]" aria-label="No evidence image captured">
+    <ImageOff size={20} />
+    <span className="text-[9px] uppercase tracking-wide text-center px-1">No image</span>
+  </div>
+);
 
 export const AlertCard: React.FC<AlertCardProps> = ({ alert, onAcknowledge, onClick }) => {
   const getSeverityStyles = () => {
@@ -65,11 +72,19 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onAcknowledge, onCl
     <article className="p-3 rounded-[4px] bg-[#11151C] border border-white/10 flex gap-3 transition-colors">
       {onClick ? (
         <button type="button" onClick={onClick} className="w-[108px] h-[108px] shrink-0 rounded-[3px] border border-white/10 overflow-hidden bg-black/40 p-0" aria-label={`Open ${alert.title}`}>
-          <img src={alert.evidenceImage} alt="" className="w-full h-full object-cover" />
+          {alert.evidenceImage ? (
+            <img src={alert.evidenceImage} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <NoEvidencePlaceholder />
+          )}
         </button>
       ) : (
         <div className="w-[108px] h-[108px] shrink-0 rounded-[3px] border border-white/10 overflow-hidden bg-black/40">
-          <img src={alert.evidenceImage} alt={alert.title} className="w-full h-full object-cover" />
+          {alert.evidenceImage ? (
+            <img src={alert.evidenceImage} alt={alert.title} className="w-full h-full object-cover" />
+          ) : (
+            <NoEvidencePlaceholder />
+          )}
         </div>
       )}
 
