@@ -39,7 +39,8 @@ def req(path: str, method="GET", data=None, headers=None, timeout=20):
         body = data
     r = urllib.request.Request(BASE + path, data=body, headers=h, method=method)
     try:
-        with urllib.request.urlopen(r, timeout=timeout) as resp:
+        # BASE is GUSIP_BASE (operator-run smoke test, not request-handling code).
+        with urllib.request.urlopen(r, timeout=timeout) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             raw = resp.read()
             return resp.status, resp.headers, raw
     except urllib.error.HTTPError as e:

@@ -62,7 +62,8 @@ def get_plate_model() -> Any | None:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".part")
             log.info("Downloading plate detector %s", PLATE_MODEL_URL)
-            urllib.request.urlretrieve(PLATE_MODEL_URL, tmp)
+            # PLATE_MODEL_URL is a hardcoded constant above, not request input.
+            urllib.request.urlretrieve(PLATE_MODEL_URL, tmp)  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             tmp.replace(path)
         _plate_model = YOLO(str(path))
         log.info("Plate YOLO loaded %s", path)
