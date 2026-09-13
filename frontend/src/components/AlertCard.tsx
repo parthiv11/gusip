@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Check, ImageOff } from "lucide-react";
 
 export type AlertSeverity = "stolen" | "wanted" | "blacklisted" | "activity";
@@ -31,6 +31,9 @@ const NoEvidencePlaceholder: React.FC = () => (
 );
 
 export const AlertCard: React.FC<AlertCardProps> = ({ alert, onAcknowledge, onClick }) => {
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = Boolean(alert.evidenceImage) && !imgFailed;
+
   const getSeverityStyles = () => {
     switch (alert.severity) {
       case "stolen":
@@ -72,16 +75,16 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onAcknowledge, onCl
     <article className="p-3 rounded-[4px] bg-[#11151C] border border-white/10 flex gap-3 transition-colors">
       {onClick ? (
         <button type="button" onClick={onClick} className="w-[108px] h-[108px] shrink-0 rounded-[3px] border border-white/10 overflow-hidden bg-black/40 p-0" aria-label={`Open ${alert.title}`}>
-          {alert.evidenceImage ? (
-            <img src={alert.evidenceImage} alt="" className="w-full h-full object-cover" />
+          {showImage ? (
+            <img src={alert.evidenceImage!} alt="" className="w-full h-full object-cover" onError={() => setImgFailed(true)} />
           ) : (
             <NoEvidencePlaceholder />
           )}
         </button>
       ) : (
         <div className="w-[108px] h-[108px] shrink-0 rounded-[3px] border border-white/10 overflow-hidden bg-black/40">
-          {alert.evidenceImage ? (
-            <img src={alert.evidenceImage} alt={alert.title} className="w-full h-full object-cover" />
+          {showImage ? (
+            <img src={alert.evidenceImage!} alt={alert.title} className="w-full h-full object-cover" onError={() => setImgFailed(true)} />
           ) : (
             <NoEvidencePlaceholder />
           )}
