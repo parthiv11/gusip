@@ -29,3 +29,6 @@ snapshots/
 docs/submission/video-raw/
 backups/
 *.dump
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
