@@ -27,6 +27,8 @@ clips/
 snapshots/
 .coverage
 docs/submission/video-raw/
+docs/submission/remotion/out/
+docs/submission/remotion/public/*.mp4
 backups/
 *.dump
 frontend/test-results/

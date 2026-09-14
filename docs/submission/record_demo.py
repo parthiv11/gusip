@@ -80,11 +80,17 @@ def login(page: Page, user: str, password: str) -> None:
 
 
 def click_nav(page: Page, label: str) -> None:
+    dest = {"Control Room": "/", "Investigate": "/search", "Cameras": "/cameras", "GIS": "/map"}[label]
     link = page.locator("header nav a", has_text=label).first
-    if link.count() and link.is_visible():
-        link.click()
-    else:
-        dest = {"Control Room": "/", "Investigate": "/search", "Cameras": "/cameras", "GIS": "/map"}[label]
+    try:
+        if link.count() and link.is_visible():
+            link.click(timeout=10_000)
+        else:
+            page.goto(f"{BASE}{dest}")
+    except PWTimeout:
+        # Under memory pressure a click can stall past its timeout even
+        # though the app is fine — fall back to a direct navigation rather
+        # than crash a multi-minute recording over one flaky click.
         page.goto(f"{BASE}{dest}")
     page.wait_for_timeout(700)
 
@@ -106,14 +112,21 @@ def walkthrough(page: Page) -> None:
     caption(page, "Operator wall. Video stays on departmental NVRs — this is the hit picture.")
     hold(page, 2.5)
 
-    page.get_by_role("button", name="Gov feeds").click()
-    caption(page, "Gov feeds — official cameras from live.sentinelgujarat.in")
+    page.get_by_role("tab", name="Gov feeds", exact=True).click()
+    caption(page, "Gov feeds — official Sentinel cameras, proxied live through GUSIP")
     hold(page, 1.5)
-    page.get_by_role("button", name="Sync Sentinel").click()
-    try:
-        page.wait_for_selector("text=government feeds onboarded", timeout=45000)
-    except PWTimeout:
-        page.wait_for_timeout(3000)
+    # Operators can view but not onboard Sentinel cameras (onboard_camera is
+    # coordinator/admin-only) — the button only renders for those roles, and
+    # the demo catalog is already synced from earlier onboarding.
+    sync_btn = page.get_by_role("button", name="Sync Sentinel")
+    if sync_btn.count():
+        sync_btn.click()
+        try:
+            page.wait_for_selector("text=government feeds onboarded", timeout=45000)
+        except PWTimeout:
+            page.wait_for_timeout(3000)
+    else:
+        page.wait_for_timeout(1000)
 
     caption(page, "Chimanbhai Bridge — jury-provided Sentinel camera, live through the GUSIP proxy.")
     for label in ("SEN-1", "Chimanbhai", "Bridge"):
@@ -133,7 +146,7 @@ def walkthrough(page: Page) -> None:
     except PWTimeout:
         hold(page, 3)
 
-    page.get_by_role("button", name="Own/demo").click()
+    page.get_by_role("tab", name="Own/demo", exact=True).click()
     caption(page, "Own/demo wall — RTSP / ONVIF / vendor cameras. Watchlist: stolen Fortuner GJ 01 ST 0001.")
     hold(page, 3)
 
@@ -167,7 +180,11 @@ def walkthrough(page: Page) -> None:
     caption(page, "Statewide GIS — cameras, coverage, yellow pins for open alerts.")
     hold(page, 6)
 
-    page.evaluate("() => localStorage.removeItem('gusip.session')")
+    # The session token lives in sessionStorage (key "gusip.session"), paired
+    # with a CSRF cookie — clearing only one leaves the other's stale session
+    # rejecting this next login's own POST with 403 and never redirecting.
+    page.evaluate("() => sessionStorage.clear()")
+    page.context.clear_cookies()
     page.goto(f"{BASE}/login", wait_until="domcontentloaded")
     caption(page, "Coordinator (Ahmedabad) — home district only, until break-glass.")
     hold(page, 2)
