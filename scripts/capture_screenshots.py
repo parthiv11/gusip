@@ -25,7 +25,14 @@ USERS = {
 
 
 def login(page: Page, username: str) -> None:
-    page.goto(f"{BASE}/login", wait_until="networkidle")
+    # Clear the prior session fully (sessionStorage AND cookies) before
+    # switching users. Clearing only sessionStorage left a stale CSRF/session
+    # cookie behind from the previous login, which the CSRF middleware then
+    # rejected with a 403 on this login's own POST /api/v1/auth/token —
+    # the request never redirected, so wait_for_url("/") just timed out.
+    page.evaluate("() => sessionStorage.clear()")
+    page.context.clear_cookies()
+    page.goto(f"{BASE}/login", wait_until="domcontentloaded")
     page.locator("input").first.fill(username)
     page.locator("input[type=password]").fill(USERS[username])
     page.get_by_role("button", name="Sign in").click()
@@ -41,7 +48,7 @@ def shot(page: Page, name: str) -> None:
 
 
 def click_tab(page: Page, label: str) -> None:
-    btn = page.get_by_role("button", name=label, exact=True)
+    btn = page.get_by_role("tab", name=label, exact=True)
     if btn.count():
         btn.first.click()
         page.wait_for_timeout(400)
@@ -131,10 +138,17 @@ def main() -> None:
         shot(page, "07-alerts.png")
 
         print("[8/8] coordinator — home dept + break-glass")
-        page.goto(f"{BASE}/login", wait_until="networkidle")
         login(page, "coordinator")
         click_tab(page, "Own/demo")
-        page.wait_for_timeout(1800)
+        page.wait_for_timeout(1200)
+        # Focus an actual own-department tile — otherwise the big pane keeps
+        # showing whatever gov camera was last selected before this tab
+        # switch, which muddles a screenshot meant to show department scoping.
+        # The "Own/demo" tab already filters the wall to non-sentinel cameras.
+        own_tile = page.locator("#wall-panel button[aria-pressed]").first
+        if own_tile.count():
+            own_tile.click()
+            page.wait_for_timeout(600)
         shot(page, "08-rbac-coordinator.png")
 
         browser.close()
