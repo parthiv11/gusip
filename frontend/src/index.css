@@ -119,12 +119,19 @@ html[data-theme="light"] .bg-\[\#0B0F14\] {
 }
 html[data-theme="light"] .bg-\[\#11151C\],
 html[data-theme="light"] .bg-\[\#10151D\],
-html[data-theme="light"] .bg-\[\#151A22\] {
+html[data-theme="light"] .bg-\[\#10141D\],
+html[data-theme="light"] .bg-\[\#151A22\],
+html[data-theme="light"] .hover\:bg-\[\#1A202C\]:hover {
   background-color: rgb(var(--ink-900));
 }
 html[data-theme="light"] .text-ink-950,
 html[data-theme="light"] .text-\[\#0B0D10\] {
   color: #0b0d10;
+}
+html[data-theme="light"] .text-\[\#F2F4F7\],
+html[data-theme="light"] .text-\[\#F2F3F5\],
+html[data-theme="light"] .hover\:text-\[\#F2F4F7\]:hover {
+  color: rgb(var(--fg));
 }
 html[data-theme="light"] .text-\[\#9AA4B2\],
 html[data-theme="light"] .text-\[\#A8B2C1\],
