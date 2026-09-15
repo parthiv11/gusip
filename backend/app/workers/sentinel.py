@@ -18,6 +18,7 @@ Contract: https://sentinel.gujarat.gov.in/resource
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import shutil
@@ -925,6 +926,42 @@ def _grab_rtsp_opencv_burst(url: str, count: int = 5, *, timeout_s: float = 10.0
     return box[0]
 
 
+def _looks_decode_corrupted(jpeg: bytes) -> bool:
+    """Flag the vertical-streak artifact seen when a live RTSP/HLS grab lands
+    mid-GOP: real macroblocks decode fine, then packet loss leaves a band of
+    near-flat, mis-colored columns for the rest of the frame. Detected as a
+    large fraction of columns with near-zero vertical variance in the lower
+    part of the frame — guarded by a brightness floor so a genuinely dark
+    night frame (uniformly near-black, same low column variance) isn't
+    mistaken for corruption.
+    """
+    try:
+        import numpy as np
+
+        with Image.open(io.BytesIO(jpeg)) as im:
+            gray = np.asarray(im.convert("L"), dtype=np.float32)
+    except Exception:
+        return False
+    h, _w = gray.shape
+    if h < 20:
+        return False
+    bottom = gray[int(h * 0.4) :, :]
+    if bottom.mean() <= 15:
+        return False
+    low_var_frac = (bottom.std(axis=0) < 4).mean()
+    return bool(low_var_frac > 0.3)
+
+
+def _best_burst_frame(burst: list[tuple[bytes, float | None]]) -> tuple[bytes, float | None]:
+    """Prefer the freshest (last) frame in the burst, but skip ones that look
+    decode-corrupted in favor of an earlier good frame from the same burst —
+    no extra network cost, since these frames are already fetched."""
+    for jpeg, pts in reversed(burst):
+        if not _looks_decode_corrupted(jpeg):
+            return jpeg, pts
+    return burst[-1]
+
+
 def _grab_frame_burst(url: str, count: int = 8) -> list[tuple[bytes, float | None]]:
     if url.startswith(("rtsp://", "http://", "https://")):
         burst = _grab_rtsp_opencv_burst(url, count=count, timeout_s=12.0 if url.startswith("http") else 10.0)
@@ -1055,7 +1092,7 @@ async def sample_camera(cam: Camera) -> int:
         burst = await asyncio.to_thread(_grab_frame_burst, candidate, 8)
         if burst:
             url = candidate
-            jpeg, pts = burst[-1]
+            jpeg, pts = _best_burst_frame(burst)
             break
         jpeg, pts = await asyncio.to_thread(_grab_frame_sample, candidate)
         if jpeg:
