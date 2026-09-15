@@ -5,7 +5,45 @@ import { snapSrc } from "../api/media";
 import { AlertInbox } from "../components/AlertInbox";
 import ModeTabs from "../components/ModeTabs";
 import type { OperationalAlert } from "../components/AlertCard";
-import type { Alert } from "../types";
+import type { Alert, SceneAnomaly } from "../types";
+
+const ANOMALY_LABEL: Record<string, string> = {
+  crowding: "crowding",
+  stopped_vehicle: "stopped vehicle",
+  wrong_way: "wrong way",
+};
+
+function anomalyTitle(a: SceneAnomaly): string {
+  const attrs = a.attributes || {};
+  if (a.event_type === "crowding") {
+    const persons = Number(attrs.person_count ?? 0);
+    const vehicles = Number(attrs.vehicle_count ?? 0);
+    return `${persons} people · ${vehicles} vehicles in frame`;
+  }
+  const color = typeof attrs.color === "string" ? attrs.color : "";
+  const klass = typeof attrs.vehicle_class === "string" ? attrs.vehicle_class : "vehicle";
+  const descr = [color, klass].filter(Boolean).join(" ");
+  if (a.event_type === "stopped_vehicle") return `${descr} stopped in lane`;
+  if (a.event_type === "wrong_way") return `${descr} moving against traffic flow`;
+  return ANOMALY_LABEL[a.event_type] || a.event_type;
+}
+
+function anomalyToCard(a: SceneAnomaly): OperationalAlert {
+  return {
+    id: a.id,
+    severity: "activity",
+    severityLabel: ANOMALY_LABEL[a.event_type] || a.event_type.replaceAll("_", " "),
+    title: anomalyTitle(a),
+    cameraCode: a.camera_code || String(a.camera_id),
+    confidence: `${Math.round(a.confidence * 100)}%`,
+    trackId: String(a.id),
+    hits: 1,
+    timestamp: new Date(a.timestamp).toLocaleTimeString("en-IN", { hour12: false }),
+    evidenceImage: snapSrc(a.snapshot_url) ?? null,
+    acknowledged: false,
+    ackable: false,
+  };
+}
 
 function severityOf(category: string, matchKind?: string): OperationalAlert["severity"] {
   if (category.includes("stolen")) return "stolen";
@@ -56,10 +94,18 @@ function parseStatus(raw: string | null): AlertStatus {
   return "";
 }
 
+type View = "watchlist" | "activity";
+
+function parseView(raw: string | null): View {
+  return raw === "activity" ? "activity" : "watchlist";
+}
+
 export default function AlertsPage() {
   const [params, setParams] = useSearchParams();
   const status = parseStatus(params.get("status"));
+  const view = parseView(params.get("view"));
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [anomalies, setAnomalies] = useState<SceneAnomaly[]>([]);
   const [error, setError] = useState("");
   const canAck = can("ack_alert");
 
@@ -75,14 +121,32 @@ export default function AlertsPage() {
     );
   }
 
+  function setView(next: View) {
+    setParams(
+      (p) => {
+        const copy = new URLSearchParams(p);
+        if (next === "activity") copy.set("view", "activity");
+        else copy.delete("view");
+        return copy;
+      },
+      { replace: true }
+    );
+  }
+
   async function load() {
     const q = status ? `?status=${encodeURIComponent(status)}` : "";
     setAlerts(await api<Alert[]>(`/api/v1/alerts${q}`));
   }
 
+  async function loadAnomalies() {
+    const res = await api<{ rows: SceneAnomaly[] }>("/api/v1/alerts/anomalies?hours=24&limit=200");
+    setAnomalies(res.rows);
+  }
+
   useEffect(() => {
-    load().catch((err) => setError(String(err)));
-  }, [status]);
+    if (view === "watchlist") load().catch((err) => setError(String(err)));
+    else loadAnomalies().catch((err) => setError(String(err)));
+  }, [status, view]);
 
   async function onAcknowledge(id: number) {
     if (!canAck) return;
@@ -95,7 +159,9 @@ export default function AlertsPage() {
     }
   }
 
-  const cards = useMemo(() => alerts.map(toCard), [alerts]);
+  const watchlistCards = useMemo(() => alerts.map(toCard), [alerts]);
+  const anomalyCards = useMemo(() => anomalies.map(anomalyToCard), [anomalies]);
+  const cards = view === "watchlist" ? watchlistCards : anomalyCards;
   const openCount = alerts.filter((a) => a.status === "new").length;
 
   return (
@@ -103,16 +169,28 @@ export default function AlertsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4 shrink-0">
         <h1 className="text-lg font-semibold text-[#F2F4F7]">Alerts</h1>
         <ModeTabs
-          idPrefix="alert-status"
-          label="Alert status"
-          value={status === "new" || status === "acknowledged" ? status : "all"}
-          onChange={(id) => setStatus(id === "all" ? "" : id)}
+          idPrefix="alert-view"
+          label="Alert source"
+          value={view}
+          onChange={(id) => setView(id)}
           options={[
-            { id: "all" as const, label: "All" },
-            { id: "new" as const, label: "New" },
-            { id: "acknowledged" as const, label: "Acknowledged" },
+            { id: "watchlist" as const, label: "Watchlist hits", hint: "Stolen/blacklisted vehicles, wanted/missing persons" },
+            { id: "activity" as const, label: "Scene activity", hint: "Auto-detected crowding, stopped vehicles, wrong-way — no watchlist match needed" },
           ]}
         />
+        {view === "watchlist" && (
+          <ModeTabs
+            idPrefix="alert-status"
+            label="Alert status"
+            value={status === "new" || status === "acknowledged" ? status : "all"}
+            onChange={(id) => setStatus(id === "all" ? "" : id)}
+            options={[
+              { id: "all" as const, label: "All" },
+              { id: "new" as const, label: "New" },
+              { id: "acknowledged" as const, label: "Acknowledged" },
+            ]}
+          />
+        )}
         <nav className="sm:ml-auto flex gap-3 text-[11px]" aria-label="Related views">
           <Link className="text-slate-400 hover:text-brass-400" to="/search?mode=plate">
             Plate search
@@ -133,7 +211,13 @@ export default function AlertsPage() {
       <div className="flex-1 min-h-0">
         <AlertInbox
           alerts={cards}
-          focusText={openCount ? `${openCount} open hits across Gujarat` : "No open hits"}
+          focusText={
+            view === "watchlist"
+              ? openCount
+                ? `${openCount} open hits across Gujarat`
+                : "No open hits"
+              : `${anomalyCards.length} auto-detected in the last 24h`
+          }
           onAcknowledge={onAcknowledge}
         />
       </div>

@@ -61,6 +61,19 @@ export interface Alert {
   } | null;
 }
 
+export interface SceneAnomaly {
+  id: number;
+  timestamp: string;
+  event_type: "crowding" | "stopped_vehicle" | "wrong_way" | string;
+  camera_id: number;
+  camera_code: string | null;
+  camera_name: string | null;
+  city: string | null;
+  confidence: number;
+  snapshot_url?: string | null;
+  attributes: Record<string, unknown>;
+}
+
 export interface EventItem {
   id: number;
   camera_id: number;
