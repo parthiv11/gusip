@@ -68,7 +68,9 @@ async def stats(
     user: Annotated[User, Depends(require_capability("admin_stats"))],
 ):
     scoped_to = await department_scope(user)
-    camera_filter = (Camera.department_id == scoped_to,) if scoped_to is not None else ()
+    camera_filter = (Camera.is_active.is_(True),) + (
+        (Camera.department_id == scoped_to,) if scoped_to is not None else ()
+    )
     cameras = (await db.execute(select(func.count(Camera.id)).where(*camera_filter))).scalar() or 0
     online = (
         await db.execute(select(func.count(Camera.id)).where(Camera.status == "online", *camera_filter))
