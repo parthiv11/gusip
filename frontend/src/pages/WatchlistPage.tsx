@@ -20,12 +20,16 @@ export default function WatchlistPage() {
   const [category, setCategory] = useState("stolen_vehicle");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
+    setLoading(true);
     try {
       setRows(await api<Entry[]>("/api/v1/watchlist"));
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => {
@@ -110,7 +114,22 @@ export default function WatchlistPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="py-6 text-center text-[#667085] text-xs">
+                  Loading watchlist…
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-6 text-center text-[#667085] text-xs">
+                  {can("watchlist_write")
+                    ? "No entries yet. Add a plate or name above to get started."
+                    : "No watchlist entries yet."}
+                </td>
+              </tr>
+            ) : (
+              rows.map((r) => (
               <tr key={r.id} className="border-t border-white/[0.05] hover:bg-[#121722]">
                 <td className="py-2 pl-4 text-[#D9A441]">{r.category.replaceAll("_", " ")}</td>
                 <td className="text-[#F2F4F7]">{r.name}</td>
@@ -157,7 +176,8 @@ export default function WatchlistPage() {
                 </td>
                 <td className="text-[#667085] text-xs">{r.description}</td>
               </tr>
-            ))}
+              ))
+            )}
           </tbody>
         </table>
       </div>

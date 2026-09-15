@@ -17,12 +17,16 @@ export default function CasesPage() {
   const [description, setDescription] = useState("Multi-camera hops SG Highway to Gandhinagar.");
 
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
+    setLoading(true);
     try {
       setRows(await api<CaseRow[]>("/api/v1/cases"));
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => {
@@ -87,26 +91,32 @@ export default function CasesPage() {
         />
         <button className="bg-[#D9A441] text-[#0B0D10] px-4 py-2 rounded text-sm font-semibold">Create</button>
       </form>
-      <ul className="space-y-2">
-        {rows.map((r) => (
-          <li
-            key={r.id}
-            className="border border-white/10 rounded-[4px] p-3 flex flex-col sm:flex-row sm:justify-between gap-2 bg-[#11151C]"
-          >
-            <div>
-              <div className="font-medium text-[#F2F4F7]">{r.title}</div>
-              <div className="text-xs text-[#9AA4B2]">
-                {r.status} · {r.created_by} · {r.created_at}
+      {loading ? (
+        <p className="text-xs text-[#667085]">Loading cases…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-[#667085]">No case folders yet. Create one above to attach evidence to it.</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((r) => (
+            <li
+              key={r.id}
+              className="border border-white/10 rounded-[4px] p-3 flex flex-col sm:flex-row sm:justify-between gap-2 bg-[#11151C]"
+            >
+              <div>
+                <div className="font-medium text-[#F2F4F7]">{r.title}</div>
+                <div className="text-xs text-[#9AA4B2]">
+                  {r.status} · {r.created_by} · {r.created_at}
+                </div>
               </div>
-            </div>
-            {can("export") && (
-              <button onClick={() => exp(r.id)} className="text-xs text-[#D9A441]">
-                Export JSON
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+              {can("export") && (
+                <button onClick={() => exp(r.id)} className="text-xs text-[#D9A441]">
+                  Export JSON
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
