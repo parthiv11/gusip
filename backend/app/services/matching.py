@@ -179,6 +179,9 @@ async def _bump_open_alert(
     extra["color"] = (event.attributes or {}).get("color")
     extra["vehicle_class"] = (event.attributes or {}).get("vehicle_class")
     extra["plate_status"] = (event.attributes or {}).get("plate_status")
+    if entry.entity_type == "scene":
+        extra["person_count"] = (event.attributes or {}).get("person_count")
+        extra["vehicle_count"] = (event.attributes or {}).get("vehicle_count")
     open_row.payload = extra
     flag_modified(open_row, "payload")
     open_row.confidence = max(open_row.confidence, confidence)
@@ -258,6 +261,14 @@ async def maybe_raise_alert(
             "color": (event.attributes or {}).get("color"),
             "vehicle_class": (event.attributes or {}).get("vehicle_class"),
             "plate_status": (event.attributes or {}).get("plate_status"),
+            **(
+                {
+                    "person_count": (event.attributes or {}).get("person_count"),
+                    "vehicle_count": (event.attributes or {}).get("vehicle_count"),
+                }
+                if entry.entity_type == "scene"
+                else {}
+            ),
         },
     )
     try:

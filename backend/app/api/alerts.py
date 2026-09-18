@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -12,13 +12,12 @@ from app.core.policy import assert_department_allowed, require_capability
 from app.core.security import client_ip, get_current_user
 from app.db import get_db
 from app.models.camera import Camera
-from app.models.event import Alert, DetectionEvent
+from app.models.event import Alert
 from app.models.user import User
+from app.models.watchlist import WatchlistEntry
 from app.schemas.common import AlertOut
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
-
-ANOMALY_TYPES = ("crowding", "stopped_vehicle", "wrong_way")
 
 _ALERT_LOAD = (
     selectinload(Alert.camera).selectinload(Camera.department),
@@ -32,9 +31,27 @@ async def list_alerts(
     db: Annotated[AsyncSession, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
     status: str | None = None,
+    kind: str = "watchlist",
     limit: int = 100,
 ):
-    q = select(Alert).options(*_ALERT_LOAD)
+    """kind="watchlist" (default) is real watchlist hits — stolen/blacklisted
+    vehicles, wanted/missing persons. kind="scene" is auto-detected scene
+    activity (crowding, stopped vehicle, wrong-way) from analyze_scene() in
+    backend/app/services/scene.py.
+
+    These were already becoming real Alert rows — match_entry() in
+    services/matching.py already matches DetectionEvent.attributes["scene"]
+    against the WatchlistEntry rows seeded with entity_type="scene" — the gap
+    was never in the pipeline, it was that kind="watchlist" used to return
+    both mixed together, so a handful of scene alerts got lost in a feed
+    otherwise dominated by continuous simulated vehicle/person hits (up to
+    1000+ hit_count each). Split by entity_type instead of ever having queried
+    them separately."""
+    q = select(Alert).options(*_ALERT_LOAD).join(WatchlistEntry, WatchlistEntry.id == Alert.watchlist_id)
+    if kind == "scene":
+        q = q.where(WatchlistEntry.entity_type == "scene")
+    else:
+        q = q.where(WatchlistEntry.entity_type != "scene")
     scoped_to = await department_scope(user)
     if scoped_to is not None:
         q = q.join(Camera, Camera.id == Alert.camera_id).where(Camera.department_id == scoped_to)
@@ -50,66 +67,11 @@ async def list_alerts(
         username=user.username,
         action="list_alerts",
         resource="alerts",
-        details={"status": status, "count": len(rows)},
+        details={"status": status, "kind": kind, "count": len(rows)},
         ip_address=client_ip(request),
     )
     await db.commit()
     return rows
-
-
-@router.get("/anomalies")
-async def list_anomalies(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    user: Annotated[User, Depends(get_current_user)],
-    hours: int = 24,
-    limit: int = 200,
-):
-    """Scene anomalies (crowding, stopped vehicle, wrong-way) from analyze_scene()
-    (backend/app/services/scene.py). These ride on DetectionEvent, not Alert,
-    since they have no watchlist match — Alert.watchlist_id is required, so
-    there's no schema path for a non-watchlist event to become an Alert row.
-    Surfaced here as their own list rather than force-fitting them into the
-    watchlist alert inbox."""
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    scoped_to = await department_scope(user)
-    q = (
-        select(DetectionEvent)
-        .join(Camera, Camera.id == DetectionEvent.camera_id)
-        .options(selectinload(DetectionEvent.camera))
-        .where(DetectionEvent.event_type.in_(ANOMALY_TYPES), DetectionEvent.timestamp >= since)
-        .order_by(DetectionEvent.timestamp.desc())
-        .limit(limit)
-    )
-    if scoped_to is not None:
-        q = q.where(Camera.department_id == scoped_to)
-    rows = list((await db.execute(q)).scalars())
-    payload = [
-        {
-            "id": e.id,
-            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
-            "event_type": e.event_type,
-            "camera_id": e.camera_id,
-            "camera_code": e.camera.code if e.camera else None,
-            "camera_name": e.camera.name if e.camera else None,
-            "city": e.camera.city if e.camera else None,
-            "confidence": e.confidence,
-            "snapshot_url": e.snapshot_url,
-            "attributes": e.attributes or {},
-        }
-        for e in rows
-    ]
-    await write_audit(
-        db,
-        user_id=user.id,
-        username=user.username,
-        action="list_anomalies",
-        resource="alerts/anomalies",
-        details={"hours": hours, "count": len(payload)},
-        ip_address=client_ip(request),
-    )
-    await db.commit()
-    return {"count": len(payload), "hours": hours, "rows": payload}
 
 
 @router.post("/{alert_id}/ack", response_model=AlertOut)

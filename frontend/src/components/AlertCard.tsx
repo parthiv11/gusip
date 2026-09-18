@@ -15,8 +15,6 @@ export interface OperationalAlert {
   timestamp: string;
   evidenceImage: string | null;
   acknowledged: boolean;
-  /** false for auto-detected scene activity that has no watchlist match to acknowledge against. */
-  ackable?: boolean;
 }
 
 interface AlertCardProps {
@@ -120,26 +118,20 @@ export const AlertCard: React.FC<AlertCardProps> = ({ alert, onAcknowledge, onCl
         </div>
 
         <div className="flex justify-end mt-2">
-          {alert.ackable === false ? (
-            <span className="px-3 py-1 rounded-[3px] text-[11.5px] font-medium text-[#667085] border border-transparent">
-              Auto-detected
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onAcknowledge(alert.id)}
-              disabled={alert.acknowledged}
-              aria-label={alert.acknowledged ? "Already acknowledged" : `Acknowledge ${alert.title}`}
-              className={`px-3 py-1 rounded-[3px] text-[11.5px] font-medium flex items-center gap-1.5 transition-all ${
-                alert.acknowledged
-                  ? "bg-[#151A22] border border-white/10 text-[#667085] cursor-default"
-                  : "bg-[#151A22] border border-[#D9A441] text-[#D9A441] hover:bg-[#D9A441]/10 active:scale-95 shadow-sm"
-              }`}
-            >
-              <Check size={13} className={alert.acknowledged ? "text-[#667085]" : "text-[#D9A441]"} aria-hidden />
-              <span>{alert.acknowledged ? "Acknowledged" : "Acknowledge"}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onAcknowledge(alert.id)}
+            disabled={alert.acknowledged}
+            aria-label={alert.acknowledged ? "Already acknowledged" : `Acknowledge ${alert.title}`}
+            className={`px-3 py-1 rounded-[3px] text-[11.5px] font-medium flex items-center gap-1.5 transition-all ${
+              alert.acknowledged
+                ? "bg-[#151A22] border border-white/10 text-[#667085] cursor-default"
+                : "bg-[#151A22] border border-[#D9A441] text-[#D9A441] hover:bg-[#D9A441]/10 active:scale-95 shadow-sm"
+            }`}
+          >
+            <Check size={13} className={alert.acknowledged ? "text-[#667085]" : "text-[#D9A441]"} aria-hidden />
+            <span>{alert.acknowledged ? "Acknowledged" : "Acknowledge"}</span>
+          </button>
         </div>
       </div>
     </article>

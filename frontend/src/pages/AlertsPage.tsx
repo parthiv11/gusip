@@ -5,44 +5,22 @@ import { snapSrc } from "../api/media";
 import { AlertInbox } from "../components/AlertInbox";
 import ModeTabs from "../components/ModeTabs";
 import type { OperationalAlert } from "../components/AlertCard";
-import type { Alert, SceneAnomaly } from "../types";
+import type { Alert } from "../types";
 
-const ANOMALY_LABEL: Record<string, string> = {
-  crowding: "crowding",
-  stopped_vehicle: "stopped vehicle",
-  wrong_way: "wrong way",
-};
-
-function anomalyTitle(a: SceneAnomaly): string {
-  const attrs = a.attributes || {};
-  if (a.event_type === "crowding") {
-    const persons = Number(attrs.person_count ?? 0);
-    const vehicles = Number(attrs.vehicle_count ?? 0);
+function sceneTitle(category: string, payload: Record<string, unknown>): string | null {
+  if (category === "crowding") {
+    const hasCounts = payload.person_count != null || payload.vehicle_count != null;
+    if (!hasCounts) return null; // pre-existing alert bumped before counts were recorded
+    const persons = Number(payload.person_count ?? 0);
+    const vehicles = Number(payload.vehicle_count ?? 0);
     return `${persons} people · ${vehicles} vehicles in frame`;
   }
-  const color = typeof attrs.color === "string" ? attrs.color : "";
-  const klass = typeof attrs.vehicle_class === "string" ? attrs.vehicle_class : "vehicle";
+  const color = typeof payload.color === "string" ? payload.color : "";
+  const klass = typeof payload.vehicle_class === "string" ? payload.vehicle_class : "vehicle";
   const descr = [color, klass].filter(Boolean).join(" ");
-  if (a.event_type === "stopped_vehicle") return `${descr} stopped in lane`;
-  if (a.event_type === "wrong_way") return `${descr} moving against traffic flow`;
-  return ANOMALY_LABEL[a.event_type] || a.event_type;
-}
-
-function anomalyToCard(a: SceneAnomaly): OperationalAlert {
-  return {
-    id: a.id,
-    severity: "activity",
-    severityLabel: ANOMALY_LABEL[a.event_type] || a.event_type.replaceAll("_", " "),
-    title: anomalyTitle(a),
-    cameraCode: a.camera_code || String(a.camera_id),
-    confidence: `${Math.round(a.confidence * 100)}%`,
-    trackId: String(a.id),
-    hits: 1,
-    timestamp: new Date(a.timestamp).toLocaleTimeString("en-IN", { hour12: false }),
-    evidenceImage: snapSrc(a.snapshot_url) ?? null,
-    acknowledged: false,
-    ackable: false,
-  };
+  if (category === "stopped_vehicle") return `${descr} stopped in lane`;
+  if (category === "wrong_way") return `${descr} moving against traffic flow`;
+  return null;
 }
 
 function severityOf(category: string, matchKind?: string): OperationalAlert["severity"] {
@@ -69,14 +47,17 @@ function toCard(a: Alert): OperationalAlert {
   const klass = typeof a.payload?.vehicle_class === "string" ? a.payload.vehicle_class : "";
   const appearance = [color, klass].filter(Boolean).join(" ");
   const unread = a.payload?.plate_status === "unreadable" || matchKind === "appearance";
+  const scene = a.watchlist?.entity_type === "scene" ? sceneTitle(category, a.payload || {}) : null;
   return {
     id: a.id,
     severity: severityOf(category, matchKind),
     severityLabel: unread && matchKind === "appearance" ? "appearance" : category.replaceAll("_", " ") || "alert",
     title:
+      scene ||
       [a.watchlist?.name, a.watchlist?.plate_number || (unread ? "plate unreadable" : ""), appearance]
         .filter(Boolean)
-        .join(" · ") || "Watchlist hit",
+        .join(" · ") ||
+      "Watchlist hit",
     cameraCode: a.camera?.code || String(a.payload?.camera_code || ""),
     confidence: `${Math.round(a.confidence * 100)}%`,
     trackId: String(track),
@@ -105,7 +86,6 @@ export default function AlertsPage() {
   const status = parseStatus(params.get("status"));
   const view = parseView(params.get("view"));
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [anomalies, setAnomalies] = useState<SceneAnomaly[]>([]);
   const [error, setError] = useState("");
   const canAck = can("ack_alert");
 
@@ -134,18 +114,14 @@ export default function AlertsPage() {
   }
 
   async function load() {
-    const q = status ? `?status=${encodeURIComponent(status)}` : "";
-    setAlerts(await api<Alert[]>(`/api/v1/alerts${q}`));
-  }
-
-  async function loadAnomalies() {
-    const res = await api<{ rows: SceneAnomaly[] }>("/api/v1/alerts/anomalies?hours=24&limit=200");
-    setAnomalies(res.rows);
+    const kind = view === "activity" ? "scene" : "watchlist";
+    const q = new URLSearchParams({ kind });
+    if (status) q.set("status", status);
+    setAlerts(await api<Alert[]>(`/api/v1/alerts?${q}`));
   }
 
   useEffect(() => {
-    if (view === "watchlist") load().catch((err) => setError(String(err)));
-    else loadAnomalies().catch((err) => setError(String(err)));
+    load().catch((err) => setError(String(err)));
   }, [status, view]);
 
   async function onAcknowledge(id: number) {
@@ -159,9 +135,7 @@ export default function AlertsPage() {
     }
   }
 
-  const watchlistCards = useMemo(() => alerts.map(toCard), [alerts]);
-  const anomalyCards = useMemo(() => anomalies.map(anomalyToCard), [anomalies]);
-  const cards = view === "watchlist" ? watchlistCards : anomalyCards;
+  const cards = useMemo(() => alerts.map(toCard), [alerts]);
   const openCount = alerts.filter((a) => a.status === "new").length;
 
   return (
@@ -175,22 +149,20 @@ export default function AlertsPage() {
           onChange={(id) => setView(id)}
           options={[
             { id: "watchlist" as const, label: "Watchlist hits", hint: "Stolen/blacklisted vehicles, wanted/missing persons" },
-            { id: "activity" as const, label: "Scene activity", hint: "Auto-detected crowding, stopped vehicles, wrong-way — no watchlist match needed" },
+            { id: "activity" as const, label: "Scene activity", hint: "Auto-detected crowding, stopped vehicles, wrong-way" },
           ]}
         />
-        {view === "watchlist" && (
-          <ModeTabs
-            idPrefix="alert-status"
-            label="Alert status"
-            value={status === "new" || status === "acknowledged" ? status : "all"}
-            onChange={(id) => setStatus(id === "all" ? "" : id)}
-            options={[
-              { id: "all" as const, label: "All" },
-              { id: "new" as const, label: "New" },
-              { id: "acknowledged" as const, label: "Acknowledged" },
-            ]}
-          />
-        )}
+        <ModeTabs
+          idPrefix="alert-status"
+          label="Alert status"
+          value={status === "new" || status === "acknowledged" ? status : "all"}
+          onChange={(id) => setStatus(id === "all" ? "" : id)}
+          options={[
+            { id: "all" as const, label: "All" },
+            { id: "new" as const, label: "New" },
+            { id: "acknowledged" as const, label: "Acknowledged" },
+          ]}
+        />
         <nav className="sm:ml-auto flex gap-3 text-[11px]" aria-label="Related views">
           <Link className="text-slate-400 hover:text-brass-400" to="/search?mode=plate">
             Plate search
@@ -216,7 +188,9 @@ export default function AlertsPage() {
               ? openCount
                 ? `${openCount} open hits across Gujarat`
                 : "No open hits"
-              : `${anomalyCards.length} auto-detected in the last 24h`
+              : openCount
+                ? `${openCount} open, auto-detected across Gujarat`
+                : "No open scene activity"
           }
           onAcknowledge={onAcknowledge}
         />
